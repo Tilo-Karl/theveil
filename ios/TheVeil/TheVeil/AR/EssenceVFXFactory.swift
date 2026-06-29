@@ -5,24 +5,32 @@ import UIKit
 
 @MainActor
 final class EssenceVFXFactory {
-    private let library: (any MTLLibrary)?
+    private let plasmaMaterial: CustomMaterial?
+    private let ribbonMaterial: CustomMaterial?
     private let coreTexture = EssenceCoreTextureFactory.makeTexture()
 
     init() {
-        library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary()
+        guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
+            plasmaMaterial = nil
+            ribbonMaterial = nil
+            return
+        }
+
+        plasmaMaterial = Self.makePlasmaMaterial(library: library)
+        ribbonMaterial = Self.makeRibbonMaterial(library: library)
     }
 
     func make(radius: Float, phase: Float) -> EssenceVFX? {
-        guard let library else {
+        guard let plasmaMaterial, let ribbonMaterial else {
             return nil
         }
 
         let plasmaMesh = MeshResource.generateSphere(radius: radius * 0.9)
         let shellSettings: [(scale: Float, displacement: Float, intensity: Float, opacity: Float)] = [
-            (0.78, radius * 0.08, 3.6, 1),
-            (1.0, radius * 0.13, 2.55, 0.76),
-            (1.28, radius * 0.19, 1.65, 0.5),
-            (1.62, radius * 0.27, 0.9, 0.26)
+            (0.78, radius * 0.09, 3.8, 0.66),
+            (1.0, radius * 0.15, 2.45, 0.4),
+            (1.28, radius * 0.22, 1.5, 0.21),
+            (1.58, radius * 0.31, 0.78, 0.09)
         ]
         let plasmaShells = shellSettings.enumerated().compactMap { index, settings in
             makePlasmaShell(
@@ -32,18 +40,18 @@ final class EssenceVFXFactory {
                 intensity: settings.intensity,
                 opacity: settings.opacity,
                 phase: phase + Float(index) * 0.29,
-                library: library
+                baseMaterial: plasmaMaterial
             )
         }
 
         guard
             plasmaShells.count == shellSettings.count,
             let core = makeCore(radius: radius, diameterScale: 1.22, opacity: 1),
-            let coreHalo = makeCore(radius: radius, diameterScale: 2.45, opacity: 0.24),
+            let coreHalo = makeCore(radius: radius, diameterScale: 2.55, opacity: 0.2),
             let ribbon = try? ProceduralEssenceRibbon(
                 radius: radius,
                 phase: phase,
-                library: library
+                baseMaterial: ribbonMaterial
             )
         else {
             return nil
@@ -65,8 +73,18 @@ final class EssenceVFXFactory {
         intensity: Float,
         opacity: Float,
         phase: Float,
-        library: any MTLLibrary
+        baseMaterial: CustomMaterial
     ) -> ModelEntity? {
+        var material = baseMaterial
+        material.custom.value = SIMD4<Float>(displacement, intensity, phase, opacity)
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.scale = SIMD3<Float>(repeating: scale)
+        entity.components.set(GroundingShadowComponent(castsShadow: false, receivesShadow: false))
+        return entity
+    }
+
+    private static func makePlasmaMaterial(library: any MTLLibrary) -> CustomMaterial? {
         let surface = CustomMaterial.SurfaceShader(
             named: "essencePlasmaSurface",
             in: library
@@ -83,15 +101,30 @@ final class EssenceVFXFactory {
             return nil
         }
 
-        material.custom.value = SIMD4<Float>(displacement, intensity, phase, opacity)
         material.blending = .transparent(opacity: .init(scale: 1))
         material.faceCulling = .none
         material.readsDepth = true
         material.writesDepth = false
+        return material
+    }
 
-        let entity = ModelEntity(mesh: mesh, materials: [material])
-        entity.scale = SIMD3<Float>(repeating: scale)
-        return entity
+    private static func makeRibbonMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(
+            named: "essenceRibbonSurface",
+            in: library
+        )
+        guard var material = try? CustomMaterial(
+            surfaceShader: surface,
+            lightingModel: .unlit
+        ) else {
+            return nil
+        }
+
+        material.blending = .transparent(opacity: .init(scale: 0.58))
+        material.faceCulling = .none
+        material.readsDepth = true
+        material.writesDepth = false
+        return material
     }
 
     private func makeCore(
@@ -127,6 +160,7 @@ final class EssenceVFX {
     let entities: [Entity]
 
     private let phase: Float
+    private let plasmaShellScales: [Float]
 
     init(
         core: ModelEntity,
@@ -140,16 +174,28 @@ final class EssenceVFX {
         self.plasmaShells = plasmaShells
         self.ribbon = ribbon
         self.phase = phase
+        self.plasmaShellScales = plasmaShells.map(\.scale.x)
         self.entities = [coreHalo] + plasmaShells + [ribbon.entity, core]
     }
 
-    func update(at time: Float) {
+    func update(
+        at time: Float,
+        coreLevel: Float = 1,
+        plasmaLevel: Float = 1,
+        tendrilLevel: Float = 1
+    ) {
         let pulse = 0.9 + sin(time * 1.75 + phase) * 0.1
-        core.scale = SIMD3<Float>(repeating: pulse)
+        let coreIgnitionScale = 0.12 + coreLevel * 0.88
+        core.scale = SIMD3<Float>(repeating: pulse * coreIgnitionScale)
         let haloPulse = 0.96 + sin(time * 1.2 + phase + 0.7) * 0.08
-        coreHalo.scale = SIMD3<Float>(repeating: haloPulse)
+        let haloIgnitionScale = 0.28 + coreLevel * 0.72
+        coreHalo.scale = SIMD3<Float>(repeating: haloPulse * haloIgnitionScale)
 
         for (index, shell) in plasmaShells.enumerated() {
+            let gatheringScale = 1.42 - plasmaLevel * 0.42
+            shell.scale = SIMD3<Float>(
+                repeating: plasmaShellScales[index] * gatheringScale
+            )
             let direction: Float = index.isMultiple(of: 2) ? 1 : -1
             shell.orientation = simd_quatf(
                 angle: direction * time * (0.08 + Float(index) * 0.025),
@@ -157,7 +203,7 @@ final class EssenceVFX {
             )
         }
 
-        ribbon.update(at: time + phase)
+        ribbon.update(at: time + phase, reveal: tendrilLevel)
     }
 }
 

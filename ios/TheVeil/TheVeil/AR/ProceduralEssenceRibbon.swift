@@ -6,7 +6,7 @@ final class ProceduralEssenceRibbon {
     let entity: ModelEntity
 
     private static let ribbonCount = 7
-    private static let segmentCount = 36
+    private static let segmentCount = 44
     private static let verticesPerRibbon = segmentCount * 2
     private static let indicesPerSegment = 12
 
@@ -14,7 +14,7 @@ final class ProceduralEssenceRibbon {
     private let radius: Float
     private let phase: Float
 
-    init(radius: Float, phase: Float, library: any MTLLibrary) throws {
+    init(radius: Float, phase: Float, baseMaterial: CustomMaterial) throws {
         self.radius = radius
         self.phase = phase
 
@@ -28,6 +28,11 @@ final class ProceduralEssenceRibbon {
                     semantic: .uv0,
                     format: .float2,
                     offset: MemoryLayout<RibbonVertex>.offset(of: \.uv) ?? 16
+                ),
+                .init(
+                    semantic: .uv1,
+                    format: .float2,
+                    offset: MemoryLayout<RibbonVertex>.offset(of: \.kind) ?? 24
                 )
             ],
             vertexLayouts: [
@@ -85,42 +90,39 @@ final class ProceduralEssenceRibbon {
         ])
 
         let meshResource = try MeshResource(from: mesh)
-        let surfaceShader = CustomMaterial.SurfaceShader(
-            named: "essenceRibbonSurface",
-            in: library
-        )
-        var material = try CustomMaterial(
-            surfaceShader: surfaceShader,
-            lightingModel: .unlit
-        )
+        var material = baseMaterial
         material.custom.value = SIMD4<Float>(0, 2.15, phase, 0.88)
-        material.blending = .transparent(opacity: .init(scale: 0.58))
-        material.faceCulling = .none
-        material.readsDepth = true
-        material.writesDepth = false
 
         entity = ModelEntity(mesh: meshResource, materials: [material])
-        update(at: 0)
+        entity.components.set(GroundingShadowComponent(castsShadow: false, receivesShadow: false))
+        update(at: 0, reveal: 1)
     }
 
-    func update(at time: Float) {
+    func update(at time: Float, reveal: Float) {
+        let reveal = min(max(reveal, 0), 1)
+
         mesh.replaceUnsafeMutableBytes(bufferIndex: 0) { rawBuffer in
             let vertices = rawBuffer.bindMemory(to: RibbonVertex.self)
 
             for ribbonIndex in 0..<Self.ribbonCount {
                 for segmentIndex in 0..<Self.segmentCount {
                     let t = Float(segmentIndex) / Float(Self.segmentCount - 1)
-                    let center = pathPoint(ribbonIndex: ribbonIndex, progress: t, time: time)
+                    let revealedProgress = t * reveal
+                    let center = pathPoint(
+                        ribbonIndex: ribbonIndex,
+                        progress: revealedProgress,
+                        time: time
+                    ) * reveal
                     let previous = pathPoint(
                         ribbonIndex: ribbonIndex,
-                        progress: max(0, t - 0.015),
+                        progress: max(0, revealedProgress - 0.015 * reveal),
                         time: time
-                    )
+                    ) * reveal
                     let next = pathPoint(
                         ribbonIndex: ribbonIndex,
-                        progress: min(1, t + 0.015),
+                        progress: min(reveal, revealedProgress + 0.015 * reveal),
                         time: time
-                    )
+                    ) * reveal
                     let tangent = safeNormalize(next - previous, fallback: SIMD3<Float>(0, 1, 0))
                     let reference = abs(tangent.y) > 0.88
                         ? SIMD3<Float>(1, 0, 0)
@@ -132,18 +134,32 @@ final class ProceduralEssenceRibbon {
                     let envelope = max(0.08, sin(.pi * t))
                     let shimmer = 0.84 + sin(time * 1.3 + t * 15 + Float(ribbonIndex)) * 0.16
                     let isWisp = ribbonIndex >= 3
-                    let baseWidth: Float = isWisp ? 0.05 : 0.012
-                    let bodyWidth: Float = isWisp ? 0.09 : 0.018
-                    let halfWidth = radius * (baseWidth + envelope * bodyWidth) * shimmer
+                    let baseWidth: Float = isWisp ? 0.028 : 0.009
+                    let bodyWidth: Float = isWisp ? 0.085 : 0.014
+                    let halfWidth = radius
+                        * (baseWidth + envelope * bodyWidth)
+                        * shimmer
+                        * reveal
                     let vertexIndex = ribbonIndex * Self.verticesPerRibbon + segmentIndex * 2
+                    let ribbonKind: Float
+                    if !isWisp {
+                        ribbonKind = 0
+                    } else if ribbonIndex == Self.ribbonCount - 1 {
+                        ribbonKind = 2
+                    } else {
+                        ribbonKind = 1
+                    }
+                    let kind = SIMD2<Float>(ribbonKind, Float(ribbonIndex) / Float(Self.ribbonCount))
 
                     vertices[vertexIndex] = RibbonVertex(
                         position: center - side * halfWidth,
-                        uv: SIMD2<Float>(t, 0)
+                        uv: SIMD2<Float>(t, 0),
+                        kind: kind
                     )
                     vertices[vertexIndex + 1] = RibbonVertex(
                         position: center + side * halfWidth,
-                        uv: SIMD2<Float>(t, 1)
+                        uv: SIMD2<Float>(t, 1),
+                        kind: kind
                     )
                 }
             }
@@ -212,4 +228,5 @@ final class ProceduralEssenceRibbon {
 private struct RibbonVertex {
     var position: SIMD3<Float>
     var uv: SIMD2<Float>
+    var kind: SIMD2<Float>
 }

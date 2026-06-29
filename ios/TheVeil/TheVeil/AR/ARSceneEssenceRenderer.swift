@@ -4,6 +4,9 @@ import UIKit
 
 @MainActor
 final class ARSceneEssenceRenderer {
+    private let manifestationDuration: CFTimeInterval = 1.1
+    private let demanifestationDuration: CFTimeInterval = 0.95
+    private let visibleDuration: CFTimeInterval = 3
     private var renderedEssences: [AmbientEssence.ID: RenderedEssence] = [:]
     private var atmosphereAnchor: AnchorEntity?
     private let vfxFactory = EssenceVFXFactory()
@@ -35,18 +38,19 @@ final class ARSceneEssenceRenderer {
     }
 
     func updateFloatingMotion(at time: CFTimeInterval) {
-        let time = Float(time)
-
         for renderedEssence in renderedEssences.values {
+            updateManifestation(for: renderedEssence, at: time)
+
+            let shaderTime = Float(time)
             let phase = renderedEssence.motionPhase
             let drift = SIMD3<Float>(
-                sin(time * 0.23 + phase) * 0.055 + sin(time * 0.11 + phase * 2.1) * 0.025,
-                sin(time * 0.57 + phase * 1.3) * 0.045 + cos(time * 0.19 + phase) * 0.018,
-                cos(time * 0.2 + phase * 0.8) * 0.035 + sin(time * 0.13 + phase) * 0.018
+                sin(shaderTime * 0.23 + phase) * 0.055 + sin(shaderTime * 0.11 + phase * 2.1) * 0.025,
+                sin(shaderTime * 0.57 + phase * 1.3) * 0.045 + cos(shaderTime * 0.19 + phase) * 0.018,
+                cos(shaderTime * 0.2 + phase * 0.8) * 0.035 + sin(shaderTime * 0.13 + phase) * 0.018
             )
             let position = renderedEssence.basePosition + drift
             let orientation = simd_quatf(
-                angle: sin(time * 0.17 + phase) * 0.35,
+                angle: sin(shaderTime * 0.17 + phase) * 0.35,
                 axis: simd_normalize(SIMD3<Float>(0.4, 1, 0.25))
             )
 
@@ -58,12 +62,25 @@ final class ARSceneEssenceRenderer {
                 layer.orientation = orientation
             }
 
-            renderedEssence.vfx.update(at: time)
+            renderedEssence.vfx.update(
+                at: shaderTime,
+                coreLevel: renderedEssence.presentation.core,
+                plasmaLevel: renderedEssence.presentation.plasma,
+                tendrilLevel: renderedEssence.presentation.tendrils
+            )
         }
     }
 
     func worldPosition(for id: AmbientEssence.ID) -> SIMD3<Float>? {
         renderedEssences[id]?.root.position(relativeTo: nil)
+    }
+
+    func isCapturable(id: AmbientEssence.ID) -> Bool {
+        renderedEssences[id]?.manifestationPhase == .visible
+    }
+
+    func manifestationLevel(for id: AmbientEssence.ID) -> Float {
+        renderedEssences[id]?.manifestationLevel ?? 0
     }
 
     func essenceID(for entity: Entity?) -> AmbientEssence.ID? {
@@ -140,6 +157,7 @@ final class ARSceneEssenceRenderer {
 
         for layer in visualLayers {
             layer.position = essence.position
+            layer.components.set(OpacityComponent(opacity: 0))
         }
 
         return RenderedEssence(
@@ -149,8 +167,103 @@ final class ARSceneEssenceRenderer {
             particleLayers: particleLayers,
             visualLayers: visualLayers,
             basePosition: essence.position,
-            motionPhase: Float.random(in: 0...(2 * .pi))
+            motionPhase: Float.random(in: 0...(2 * .pi)),
+            manifestationStartedAt: CACurrentMediaTime()
         )
+    }
+
+    private func updateManifestation(
+        for essence: RenderedEssence,
+        at time: CFTimeInterval
+    ) {
+        switch essence.manifestationPhase {
+        case .fadingIn:
+            let progress = min(
+                max((time - essence.manifestationStartedAt) / manifestationDuration, 0),
+                1
+            )
+            applyManifestation(progress: Float(progress), to: essence)
+
+            if progress >= 1 {
+                essence.manifestationPhase = .visible
+                essence.manifestationStartedAt = time
+                applyManifestation(progress: 1, to: essence)
+            }
+
+        case .visible:
+            guard time - essence.manifestationStartedAt >= visibleDuration else {
+                return
+            }
+
+            essence.manifestationPhase = .fadingOut
+            essence.manifestationStartedAt = time
+
+        case .fadingOut:
+            let progress = min(
+                max((time - essence.manifestationStartedAt) / demanifestationDuration, 0),
+                1
+            )
+            applyManifestation(progress: 1 - Float(progress), to: essence)
+
+            if progress >= 1 {
+                essence.manifestationPhase = .hidden
+                essence.manifestationStartedAt = time
+                essence.hiddenDuration = .random(in: 3...6)
+                applyManifestation(progress: 0, to: essence)
+                stopEmission(for: essence.particleLayers)
+            }
+
+        case .hidden:
+            guard time - essence.manifestationStartedAt >= essence.hiddenDuration else {
+                return
+            }
+
+            essence.manifestationPhase = .fadingIn
+            essence.manifestationStartedAt = time
+            startEmission(for: essence.particleLayers)
+        }
+    }
+
+    private func applyManifestation(progress: Float, to essence: RenderedEssence) {
+        let progress = min(max(progress, 0), 1)
+        let presentation = EssenceManifestationPresentation(
+            shimmer: stagedProgress(progress, from: 0, to: 0.26),
+            plasma: stagedProgress(progress, from: 0.12, to: 0.56),
+            core: stagedProgress(progress, from: 0.32, to: 0.68),
+            halo: stagedProgress(progress, from: 0.36, to: 0.8),
+            tendrils: stagedProgress(progress, from: 0.46, to: 1)
+        )
+
+        essence.manifestationLevel = smoothStep(progress)
+        essence.presentation = presentation
+
+        setOpacity(presentation.shimmer, on: essence.particleLayers[0])
+        setOpacity(presentation.shimmer * presentation.plasma, on: essence.particleLayers[1])
+        setOpacity(presentation.core, on: essence.vfx.core)
+        setOpacity(presentation.halo, on: essence.vfx.coreHalo)
+        setOpacity(presentation.tendrils, on: essence.vfx.ribbon.entity)
+
+        for (index, shell) in essence.vfx.plasmaShells.enumerated() {
+            let shellDelay = Float(index) * 0.045
+            let shellLevel = stagedProgress(
+                progress,
+                from: 0.12 + shellDelay,
+                to: 0.56 + shellDelay
+            )
+            setOpacity(shellLevel, on: shell)
+        }
+    }
+
+    private func stagedProgress(_ value: Float, from start: Float, to end: Float) -> Float {
+        smoothStep(min(max((value - start) / (end - start), 0), 1))
+    }
+
+    private func smoothStep(_ value: Float) -> Float {
+        return value * value * (3 - 2 * value)
+    }
+
+    private func setOpacity(_ opacity: Float, on entity: Entity) {
+        entity.components.set(OpacityComponent(opacity: opacity))
     }
 
     private func makeMoteEmitter(radius: Float) -> Entity {
@@ -289,7 +402,14 @@ final class ARSceneEssenceRenderer {
 
 }
 
-private struct RenderedEssence {
+private enum EssenceManifestationPhase {
+    case fadingIn
+    case visible
+    case fadingOut
+    case hidden
+}
+
+private final class RenderedEssence {
     let anchor: AnchorEntity
     let root: Entity
     let vfx: EssenceVFX
@@ -297,6 +417,47 @@ private struct RenderedEssence {
     let visualLayers: [Entity]
     let basePosition: SIMD3<Float>
     let motionPhase: Float
+    var manifestationPhase: EssenceManifestationPhase = .fadingIn
+    var manifestationStartedAt: CFTimeInterval
+    var manifestationLevel: Float = 0
+    var presentation = EssenceManifestationPresentation.hidden
+    var hiddenDuration: CFTimeInterval = 0
+
+    init(
+        anchor: AnchorEntity,
+        root: Entity,
+        vfx: EssenceVFX,
+        particleLayers: [Entity],
+        visualLayers: [Entity],
+        basePosition: SIMD3<Float>,
+        motionPhase: Float,
+        manifestationStartedAt: CFTimeInterval
+    ) {
+        self.anchor = anchor
+        self.root = root
+        self.vfx = vfx
+        self.particleLayers = particleLayers
+        self.visualLayers = visualLayers
+        self.basePosition = basePosition
+        self.motionPhase = motionPhase
+        self.manifestationStartedAt = manifestationStartedAt
+    }
+}
+
+private struct EssenceManifestationPresentation {
+    let shimmer: Float
+    let plasma: Float
+    let core: Float
+    let halo: Float
+    let tendrils: Float
+
+    static let hidden = EssenceManifestationPresentation(
+        shimmer: 0,
+        plasma: 0,
+        core: 0,
+        halo: 0,
+        tendrils: 0
+    )
 }
 
 private enum ParticleGlowTextureFactory {

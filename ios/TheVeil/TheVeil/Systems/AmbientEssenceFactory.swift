@@ -17,7 +17,7 @@ struct AmbientEssenceFactory {
             id: UUID(),
             position: position,
             value: 1,
-            radius: 0.082
+            radius: 0.064
         )
     }
 }

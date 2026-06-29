@@ -3,8 +3,8 @@ import Foundation
 enum AppStrings {
     static let scannerTitle = "The Veil"
     static let scannerModeLabel = "VEIL SCANNER"
-    static let scannerSignalLabel = "SPECTRAL SIGNAL"
-    static let essenceCounterLabel = "ESSENCE"
+    static let scannerSignalLabel = "SPECTRAL RESONANCE"
+    static let essenceCounterLabel = "CONTAINED"
     static let ambientEssenceLabel = "Collected"
     static let visibleEssenceLabel = "Remaining"
     static let scannerUnavailableTitle = "AR scanner unavailable"

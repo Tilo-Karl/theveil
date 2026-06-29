@@ -67,7 +67,10 @@ void essencePlasmaSurface(realitykit::surface_parameters params) {
     float3 cyan = float3(0.06, 0.68, 1.0);
     float3 violet = float3(0.4, 0.1, 1.0);
     float phaseVariation = fract(controls.z * 0.159);
-    float colorMix = saturate(0.12 + noiseB * 0.32 + phaseVariation * 0.1);
+    float outerWeight = 1.0 - smoothstep(0.85, 3.25, controls.y);
+    float colorMix = saturate(
+        0.1 + noiseB * 0.28 + phaseVariation * 0.08 + outerWeight * 0.52
+    );
     float3 color = mix(cyan, violet, colorMix);
     float intensity = controls.y * pulse * (0.62 + vein * 1.7);
     float alpha = saturate((0.055 + vein * 0.31) * controls.w);
@@ -81,6 +84,7 @@ void essenceRibbonSurface(realitykit::surface_parameters params) {
     auto geometry = params.geometry();
     auto surface = params.surface();
     float2 uv = geometry.uv0();
+    float2 kind = geometry.uv1();
     float4 controls = params.uniforms().custom_parameter();
     float time = params.uniforms().time();
     float edgeDistance = 1.0 - abs(uv.y * 2.0 - 1.0);
@@ -89,12 +93,25 @@ void essenceRibbonSurface(realitykit::surface_parameters params) {
     float flow = essenceFBM(float3(uv.x * 6.0 - time * 0.32, uv.y * 2.4, controls.z * 8.0));
     float filament = smoothstep(0.28, 0.78, flow);
     float flicker = 0.76 + sin(time * 2.1 + uv.x * 17.0 + controls.z * 5.0) * 0.24;
-    float alpha = softEdge * endFade * (0.1 + filament * 0.52) * controls.w;
+    float isWisp = step(0.5, kind.x);
+    float isBlueWisp = step(1.5, kind.x);
+    float filamentAlpha = softEdge * endFade * (0.14 + filament * 0.58) * controls.w;
+    float wispPulse = 0.72 + sin(time * 0.7 + uv.x * 8.0 + kind.y * 9.0) * 0.28;
+    float wispTaper = smoothstep(0.0, 0.06, uv.x)
+        * (1.0 - smoothstep(0.5, 1.0, uv.x));
+    float wispStrand = 0.34 + flow * 0.66;
+    float wispAlpha = softEdge * wispTaper * wispStrand * wispPulse * controls.w * 0.42;
+    float alpha = mix(filamentAlpha, wispAlpha, isWisp);
     float3 cyan = float3(0.08, 0.7, 1.0);
-    float3 violet = float3(0.46, 0.12, 1.0);
+    float3 violet = float3(0.62, 0.06, 1.0);
     float colorMix = saturate(0.1 + uv.x * 0.22 + flow * 0.28);
-    float3 color = mix(cyan, violet, colorMix);
+    float3 filamentColor = mix(cyan, violet, colorMix);
+    float3 violetWispColor = mix(cyan, violet, saturate(0.62 + flow * 0.3));
+    float3 blueWispColor = mix(float3(0.02, 0.34, 1.0), cyan, 0.34 + flow * 0.24);
+    float3 wispColor = mix(violetWispColor, blueWispColor, isBlueWisp);
+    float3 color = mix(filamentColor, wispColor, isWisp);
 
-    surface.set_emissive_color(half3(color * controls.y * flicker));
+    float lightStrength = mix(controls.y * flicker, controls.y * 0.55 * wispPulse, isWisp);
+    surface.set_emissive_color(half3(color * lightStrength));
     surface.set_opacity(half(alpha));
 }
