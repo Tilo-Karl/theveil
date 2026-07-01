@@ -3,6 +3,7 @@ import SwiftUI
 struct ARScannerScreen: View {
     @StateObject private var viewModel = ARScannerViewModel()
     @StateObject private var audioController = ScannerAudioController()
+    @State private var isDeviceMenuPresented = false
 
     var body: some View {
         ZStack {
@@ -12,7 +13,8 @@ struct ARScannerScreen: View {
             if viewModel.isScannerActive {
                 ScannerReticle(
                     progress: viewModel.lockOnProgress,
-                    signalMode: viewModel.signalMode
+                    signalMode: viewModel.signalMode,
+                    gameplayPhase: viewModel.gameplayPhase
                 )
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -30,14 +32,83 @@ struct ARScannerScreen: View {
             if let notice = viewModel.scannerNotice {
                 ScannerNoticeOverlay(
                     notice: notice,
-                    containedCount: viewModel.inventoryStore.ambientEssenceCount,
-                    requiredCount: viewModel.inventoryStore.ambientEssenceCount
-                        + viewModel.visibleEssenceStore.visibleEssenceCount
+                    containedCount: viewModel.noticeContainedCount,
+                    requiredCount: viewModel.noticeRequiredCount
                 )
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 170)
                 .allowsHitTesting(false)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+
+            if viewModel.gameplayPhase == .charged {
+                VStack {
+                    Spacer()
+                    CapacitorChoiceControl(
+                        overloadAction: viewModel.activateOverload,
+                        craftAction: viewModel.craftContainmentCell
+                    )
+                    .padding(.bottom, 126)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
+
+            if viewModel.isScannerActive {
+                Button {
+                    isDeviceMenuPresented = true
+                } label: {
+                    Image(systemName: "rectangle.grid.2x2")
+                        .font(.body.monospaced().weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .frame(width: 38, height: 38)
+                        .background(Color.black.opacity(0.68))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(Color.cyan.opacity(0.42), lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 116)
+                .padding(.trailing, 20)
+                .accessibilityLabel("Open scanner device menu")
+            }
+
+            #if DEBUG
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    DebugScannerControls(
+                        autoLock: Binding(
+                            get: { viewModel.debugAutoLockEnabled },
+                            set: { viewModel.setDebugAutoLockEnabled($0) }
+                        ),
+                        showPlanes: Binding(
+                            get: { viewModel.debugShowPlanes },
+                            set: { viewModel.setDebugShowPlanes($0) }
+                        ),
+                        classificationSupported: viewModel.debugPlaneClassificationSupported,
+                        floorCount: viewModel.debugFloorPlaneCount,
+                        wallCount: viewModel.debugWallPlaneCount,
+                        tableCount: viewModel.debugTablePlaneCount,
+                        otherCount: viewModel.debugOtherPlaneCount,
+                        traversalStatus: viewModel.debugTraversalStatus,
+                        testTraversal: viewModel.requestDebugSurfaceTraversal
+                    )
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 190)
+            }
+            #endif
+
+            if
+                viewModel.gameplayPhase == .overloading,
+                let overloadStartedAt = viewModel.overloadStartedAt
+            {
+                ScannerOverloadTransition(startedAt: overloadStartedAt)
+                    .allowsHitTesting(false)
             }
 
             if !viewModel.isScannerActive {
@@ -64,9 +135,191 @@ struct ARScannerScreen: View {
                 audioController.playContainmentChirp()
             }
         }
+        .onChange(of: viewModel.overloadEventCounter) { _, eventCount in
+            if eventCount > 0 {
+                audioController.playOverloadPulse()
+            }
+        }
         .onDisappear {
             audioController.stop()
         }
+        .sheet(isPresented: $isDeviceMenuPresented) {
+            ScannerDeviceMenuView(
+                inventoryStore: viewModel.inventoryStore,
+                hasIdentifiedWisp: viewModel.hasIdentifiedWisp
+            )
+        }
+    }
+}
+
+#if DEBUG
+private struct DebugScannerControls: View {
+    @Binding var autoLock: Bool
+    @Binding var showPlanes: Bool
+    let classificationSupported: Bool
+    let floorCount: Int
+    let wallCount: Int
+    let tableCount: Int
+    let otherCount: Int
+    let traversalStatus: String
+    let testTraversal: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Toggle(isOn: $autoLock) {
+                Label("AUTO LOCK", systemImage: "scope")
+            }
+            Toggle(isOn: $showPlanes) {
+                Label("PLANES", systemImage: "square.3.layers.3d")
+            }
+
+            if classificationSupported {
+                HStack(spacing: 8) {
+                    planeCount("F", count: floorCount, color: .white)
+                    planeCount("W", count: wallCount, color: .green)
+                    planeCount("T", count: tableCount, color: .blue)
+                    planeCount("O", count: otherCount, color: .cyan)
+                }
+            } else {
+                Text("CLASSIFICATION UNAVAILABLE")
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.yellow)
+            }
+
+            Button(action: testTraversal) {
+                Label("TEST CUBE  \(traversalStatus)", systemImage: "cube.transparent")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.cyan)
+        }
+        .font(.caption2.monospaced().weight(.semibold))
+        .toggleStyle(.switch)
+        .tint(Color(red: 0.7, green: 0.32, blue: 1))
+        .foregroundStyle(.white)
+        .padding(10)
+        .frame(width: 190)
+        .background(Color.black.opacity(0.72))
+        .overlay {
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func planeCount(_ label: String, count: Int, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "square.fill")
+                .foregroundStyle(color)
+            Text("\(label)\(count)")
+                .foregroundStyle(color)
+        }
+    }
+}
+#endif
+
+private struct CapacitorChoiceControl: View {
+    let overloadAction: () -> Void
+    let craftAction: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("VEIL CAPACITOR FULL")
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.cyan)
+
+            HStack(spacing: 8) {
+                choiceButton(
+                    title: "OVERLOAD",
+                    subtitle: "DISTURB THE VEIL",
+                    systemImage: "bolt.trianglebadge.exclamationmark.fill",
+                    accent: Color(red: 0.72, green: 0.3, blue: 1),
+                    action: overloadAction
+                )
+
+                choiceButton(
+                    title: "CRAFT CELL",
+                    subtitle: "PERMANENT STORAGE",
+                    systemImage: "battery.100percent",
+                    accent: .cyan,
+                    action: craftAction
+                )
+            }
+        }
+        .padding(10)
+        .background(Color.black.opacity(0.78))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.cyan.opacity(0.38), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 20)
+    }
+
+    private func choiceButton(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        accent: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                Text(title)
+                    .font(.caption.monospaced().weight(.bold))
+                Text(subtitle)
+                    .font(.system(size: 9, design: .monospaced))
+                    .opacity(0.7)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 66)
+            .background(accent.opacity(0.14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(accent.opacity(0.9), lineWidth: 1.25)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct ScannerOverloadTransition: View {
+    let startedAt: Date
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let elapsed = timeline.date.timeIntervalSince(startedAt)
+            let flash = max(0, 1 - abs(elapsed - 0.48) / 0.16)
+            let scatter = min(max((elapsed - 0.5) / 0.68, 0), 1)
+
+            ZStack {
+                Color.white
+                    .opacity(flash * 0.42)
+
+                Circle()
+                    .stroke(Color.white.opacity((1 - scatter) * 0.75), lineWidth: 3)
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(0.25 + scatter * 5.4)
+
+                Circle()
+                    .stroke(
+                        Color(red: 0.64, green: 0.22, blue: 1)
+                            .opacity((1 - scatter) * 0.8),
+                        lineWidth: 2
+                    )
+                    .frame(width: 90, height: 90)
+                    .scaleEffect(0.2 + scatter * 4.1)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -171,12 +424,13 @@ private struct CRTScanlines: View {
 private struct ScannerReticle: View {
     let progress: Double
     let signalMode: ScannerSignalMode
+    let gameplayPhase: ScannerGameplayPhase
 
     var body: some View {
         ZStack {
             ReticleCorners()
                 .stroke(
-                    hasAnomaly ? Color.cyan.opacity(0.95) : Color.white.opacity(0.65),
+                    hasAnomaly ? activeColor.opacity(0.95) : Color.white.opacity(0.65),
                     style: StrokeStyle(lineWidth: 1.5, lineCap: .square)
                 )
                 .frame(width: 84, height: 84)
@@ -196,7 +450,7 @@ private struct ScannerReticle: View {
                 .opacity(progress > 0 ? 1 : 0)
 
             Circle()
-                .fill(hasAnomaly ? Color.cyan : Color.white.opacity(0.8))
+                .fill(hasAnomaly ? activeColor : Color.white.opacity(0.8))
                 .frame(width: 4, height: 4)
 
             Rectangle()
@@ -207,13 +461,19 @@ private struct ScannerReticle: View {
                 .fill(.white.opacity(0.7))
                 .frame(width: 1, height: 20)
         }
-        .shadow(color: .cyan.opacity(progress > 0 ? 0.8 : 0.2), radius: 8)
+        .shadow(color: activeColor.opacity(progress > 0 ? 0.8 : 0.2), radius: 8)
         .animation(.easeOut(duration: 0.16), value: signalMode)
         .animation(.easeOut(duration: 0.12), value: progress)
     }
 
     private var hasAnomaly: Bool {
         signalMode != .passive
+    }
+
+    private var activeColor: Color {
+        gameplayPhase == .awakenedHunt
+            ? Color(red: 0.74, green: 0.32, blue: 1)
+            : .cyan
     }
 }
 
@@ -282,13 +542,13 @@ private struct ScannerHUD: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(AppStrings.essenceCounterLabel)
+                Text(viewModel.counterLabel)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.white.opacity(0.65))
 
-                Text("\(inventoryStore.ambientEssenceCount) / \(essenceTotal)")
+                Text("\(viewModel.displayedContainedCount) / \(viewModel.displayedContainmentGoal)")
                     .font(.headline.monospacedDigit().weight(.medium))
-                    .foregroundStyle(Color(red: 0.66, green: 0.48, blue: 1))
+                    .foregroundStyle(accentColor)
 
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
@@ -312,7 +572,7 @@ private struct ScannerHUD: View {
         .background(Color.black.opacity(0.52))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.cyan.opacity(0.22), lineWidth: 1)
+                .stroke(accentColor.opacity(0.28), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -331,7 +591,8 @@ private struct ScannerHUD: View {
                 SpectralResonanceMonitor(
                     strength: viewModel.signalStrength,
                     mode: viewModel.signalMode,
-                    lockProgress: viewModel.lockOnProgress
+                    lockProgress: viewModel.lockOnProgress,
+                    gameplayPhase: viewModel.gameplayPhase
                 )
                 .frame(height: 28)
 
@@ -345,12 +606,12 @@ private struct ScannerHUD: View {
             Spacer(minLength: 12)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(AppStrings.visibleEssenceLabel.uppercased())
+                Text(viewModel.fieldCounterLabel)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.white.opacity(0.55))
                 Text("\(visibleEssenceStore.visibleEssenceCount)")
                     .font(.body.monospacedDigit().weight(.medium))
-                    .foregroundStyle(Color(red: 0.66, green: 0.48, blue: 1))
+                    .foregroundStyle(accentColor)
             }
         }
         .padding(.horizontal, 12)
@@ -374,13 +635,21 @@ private struct ScannerHUD: View {
         if let notice = viewModel.scannerNotice {
             switch notice {
             case .essenceContained:
-                return "ESSENCE CONTAINED"
+                return "ESSENCE STORED"
+            case .capacitorCharged:
+                return "VEIL CAPACITOR CHARGED"
+            case .containmentCellCrafted:
+                return "CONTAINMENT CELL CRAFTED"
+            case .overloading:
+                return "DISCHARGING VEIL CAPACITOR"
+            case .awakenedHunt:
+                return "AGITATED SIGNALS RELEASED"
             case .synchronizing:
                 return "SYNCHRONIZING SAMPLE SET"
             case .entityCatalogued:
-                return "NEW ENTITY CATALOGUED"
+                return "WILL-O'-THE-WISP IDENTIFIED"
             case .libraryUpdated:
-                return "VEIL LIBRARY UPDATED"
+                return "VEILOLOGY UPDATED"
             }
         }
 
@@ -388,6 +657,22 @@ private struct ScannerHUD: View {
             return viewModel.signalMode == .locking
                 ? "ENTITY SIGNAL LOCKED"
                 : "ENTITY RESONANCE DETECTED"
+        }
+
+        switch viewModel.gameplayPhase {
+        case .charged:
+            return "CAPACITOR CHOICE REQUIRED"
+        case .overloading:
+            return "SPECTRAL PRESSURE CRITICAL"
+        case .awakenedHunt:
+            if viewModel.signalMode == .locking {
+                return "AGITATED LOCK  \(Int(viewModel.lockOnProgress * 100))%"
+            }
+            return viewModel.signalMode == .anomalyDetected
+                ? "AGITATED WISP DETECTED"
+                : "SEARCHING FOR AGITATED WISPS"
+        case .calmSearch, .manifestation:
+            break
         }
 
         switch viewModel.signalMode {
@@ -400,13 +685,19 @@ private struct ScannerHUD: View {
         }
     }
 
-    private var essenceTotal: Int {
-        inventoryStore.ambientEssenceCount + visibleEssenceStore.visibleEssenceCount
+    private var collectionFraction: CGFloat {
+        let goal = viewModel.displayedContainmentGoal
+        guard goal > 0 else { return 1 }
+        return min(CGFloat(viewModel.displayedContainedCount) / CGFloat(goal), 1)
     }
 
-    private var collectionFraction: CGFloat {
-        guard essenceTotal > 0 else { return 1 }
-        return CGFloat(inventoryStore.ambientEssenceCount) / CGFloat(essenceTotal)
+    private var accentColor: Color {
+        switch viewModel.gameplayPhase {
+        case .overloading, .awakenedHunt, .manifestation:
+            return Color(red: 0.7, green: 0.32, blue: 1)
+        case .calmSearch, .charged:
+            return Color(red: 0.66, green: 0.48, blue: 1)
+        }
     }
 }
 
@@ -414,6 +705,7 @@ private struct SpectralResonanceMonitor: View {
     let strength: Double
     let mode: ScannerSignalMode
     let lockProgress: Double
+    let gameplayPhase: ScannerGameplayPhase
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
@@ -431,6 +723,10 @@ private struct SpectralResonanceMonitor: View {
                 case .locking:
                     regularity = 0.35 + min(lockProgress, 1) * 0.65
                 }
+
+                let isAgitated = gameplayPhase == .overloading
+                    || gameplayPhase == .awakenedHunt
+                    || gameplayPhase == .manifestation
 
                 context.stroke(
                     Path { path in
@@ -450,10 +746,13 @@ private struct SpectralResonanceMonitor: View {
                         ? (noise - 0.88) * 7.5
                         : 0
                     let staticSignal = (noise * 2 - 1) + spike
-                    let stableSignal = sin(progress * 8 * .pi - time * 5.2)
+                    let frequency = isAgitated ? 13.0 : 8.0
+                    let speed = isAgitated ? 8.4 : 5.2
+                    let stableSignal = sin(progress * frequency * .pi - time * speed)
                     let mixedSignal = staticSignal * (1 - regularity)
                         + stableSignal * regularity
-                    let amplitude = 2.5 + min(max(strength, 0), 1) * 10.5
+                    let agitationBoost = isAgitated ? 2.5 : 0
+                    let amplitude = 2.5 + min(max(strength, 0), 1) * 10.5 + agitationBoost
                     let y = size.height / 2 + mixedSignal * amplitude
 
                     if index == 0 {
@@ -465,7 +764,11 @@ private struct SpectralResonanceMonitor: View {
 
                 context.stroke(
                     waveform,
-                    with: .color(mode == .passive ? .cyan.opacity(0.62) : .cyan),
+                    with: .color(
+                        isAgitated
+                            ? Color(red: 0.72, green: 0.3, blue: 1)
+                            : (mode == .passive ? .cyan.opacity(0.62) : .cyan)
+                    ),
                     style: StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round)
                 )
             }
@@ -487,13 +790,37 @@ private struct ScannerNoticeOverlay: View {
         VStack(spacing: 5) {
             switch notice {
             case .essenceContained:
-                Text("ESSENCE CONTAINED")
+                Text("ESSENCE STORED")
                     .foregroundStyle(.cyan)
-                Text("CONTAINMENT CELL  \(containedCount) / \(requiredCount)")
+                Text("VEIL CAPACITOR  \(containedCount) / \(requiredCount)")
                     .foregroundStyle(.white.opacity(0.8))
 
+            case .capacitorCharged:
+                Text("VEIL CAPACITOR CHARGED")
+                    .foregroundStyle(Color(red: 0.7, green: 0.34, blue: 1))
+                Text("OVERLOAD OR CRAFT")
+                    .foregroundStyle(.white.opacity(0.78))
+
+            case .containmentCellCrafted:
+                Text("CONTAINMENT CELL CRAFTED")
+                    .foregroundStyle(.cyan)
+                Text("PERMANENT STORAGE +1")
+                    .foregroundStyle(.white.opacity(0.78))
+
+            case .overloading:
+                Text("SPECTRAL OVERLOAD")
+                    .foregroundStyle(.white)
+                Text("DISCHARGING VEIL CAPACITOR")
+                    .foregroundStyle(Color(red: 0.72, green: 0.34, blue: 1))
+
+            case .awakenedHunt:
+                Text("WISPS AGITATED")
+                    .foregroundStyle(Color(red: 0.72, green: 0.34, blue: 1))
+                Text("CONTAIN 3 UNSTABLE SIGNALS")
+                    .foregroundStyle(.white.opacity(0.82))
+
             case .synchronizing:
-                Text("ESSENCE REQUIRED")
+                Text(requiredCount == 3 ? "AGITATED ESSENCE" : "ESSENCE REQUIRED")
                     .foregroundStyle(.white.opacity(0.72))
                 Text("\(containedCount) / \(requiredCount)")
                     .font(.title2.monospacedDigit().weight(.semibold))
@@ -502,11 +829,11 @@ private struct ScannerNoticeOverlay: View {
                     .foregroundStyle(.cyan)
 
             case .entityCatalogued:
-                Text("NEW ENTITY CATALOGUED")
+                Text("WILL-O'-THE-WISP IDENTIFIED")
                     .foregroundStyle(.cyan)
 
             case .libraryUpdated:
-                Text("VEIL LIBRARY UPDATED")
+                Text("VEILOLOGY UPDATED")
                     .foregroundStyle(Color(red: 0.66, green: 0.48, blue: 1))
             }
         }

@@ -39,7 +39,16 @@ extension ARScannerView {
         private var lockStartedAt: CFTimeInterval?
         private var lostSoulManifestationReadyAt: CFTimeInterval?
         private let haptic = UIImpactFeedbackGenerator(style: .light)
+        private let overloadHaptic = UIImpactFeedbackGenerator(style: .heavy)
         private var hasRenderedEssenceField = false
+        private var renderedEssenceFieldRevision = -1
+        private var handledOverloadEventCount = 0
+        #if DEBUG
+        private var debugForcedTargetID: AmbientEssence.ID?
+        private let planeDebugRenderer = ARPlaneDebugRenderer()
+        private let traversalDebugRenderer = ARSurfaceTraversalDebugRenderer()
+        private var handledDebugTraversalEventCount = 0
+        #endif
 
         private let essenceCollectionDistance: Float = 1
         private let lostSoulTrackingDistance: Float = 3
@@ -78,12 +87,19 @@ extension ARScannerView {
             arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
 
             haptic.prepare()
+            overloadHaptic.prepare()
             startVacuumLoop()
         }
 
         func stop() {
             displayLink?.invalidate()
             displayLink = nil
+            if let arView {
+                #if DEBUG
+                planeDebugRenderer.removeAll(from: arView)
+                traversalDebugRenderer.remove(from: arView)
+                #endif
+            }
             viewModel.clearLockOn()
         }
 
@@ -100,7 +116,21 @@ extension ARScannerView {
 
             guard
                 let essenceID = essenceRenderer.essenceID(for: tappedEntity),
-                essenceRenderer.isCapturable(id: essenceID),
+                viewModel.canContainEssence,
+                essenceRenderer.isCapturable(id: essenceID)
+            else {
+                return
+            }
+
+            if viewModel.debugAutoLockEnabled {
+                debugForcedTargetID = essenceID
+                lockedTargetID = essenceID
+                lockStartedAt = CACurrentMediaTime()
+                viewModel.updateLockOn(targetID: essenceID, progress: 0)
+                return
+            }
+
+            guard
                 let essencePosition = essenceRenderer.worldPosition(for: essenceID),
                 simd_distance(arView.cameraTransform.translation, essencePosition) <= essenceCollectionDistance
             else {
@@ -128,15 +158,42 @@ extension ARScannerView {
             viewModel.updateScannerStartup(at: displayLink.timestamp)
             cameraPostProcessor.setLensIntensity(viewModel.lensIntensity)
 
-            if viewModel.isScannerActive && !hasRenderedEssenceField {
+            let planeAnchors = arView.session.currentFrame?.anchors.compactMap { anchor in
+                anchor as? ARPlaneAnchor
+            } ?? []
+
+            if
+                viewModel.isScannerActive,
+                (!hasRenderedEssenceField || renderedEssenceFieldRevision != viewModel.essenceFieldRevision)
+            {
                 essenceRenderer.render(viewModel.visibleEssences, in: arView)
                 hasRenderedEssenceField = true
+                renderedEssenceFieldRevision = viewModel.essenceFieldRevision
             }
 
+            #if DEBUG
+            updatePlaneDebug(with: planeAnchors, at: displayLink.timestamp, in: arView)
+            #endif
+
             if hasRenderedEssenceField {
-                essenceRenderer.updateFloatingMotion(at: displayLink.timestamp)
+                if viewModel.overloadEventCounter > handledOverloadEventCount {
+                    handledOverloadEventCount = viewModel.overloadEventCounter
+                    clearVacuumLock()
+                    essenceRenderer.beginAwakening(at: displayLink.timestamp)
+                    overloadHaptic.impactOccurred(intensity: 1)
+                    overloadHaptic.prepare()
+                }
+
+                essenceRenderer.updateFloatingMotion(
+                    at: displayLink.timestamp,
+                    planeAnchors: planeAnchors,
+                    cameraPosition: arView.cameraTransform.translation
+                )
             }
-            lostSoulRenderer.updateFloatingMotion(at: displayLink.timestamp)
+            lostSoulRenderer.update(
+                at: displayLink.timestamp,
+                cameraPosition: arView.cameraTransform.translation
+            )
             manifestLostSoulIfNeeded(in: arView)
             updatePostProcessEffects(in: arView)
 
@@ -201,11 +258,96 @@ extension ARScannerView {
             }
         }
 
+        #if DEBUG
+        private func updatePlaneDebug(
+            with planeAnchors: [ARPlaneAnchor],
+            at time: CFTimeInterval,
+            in arView: ARView
+        ) {
+            planeDebugRenderer.update(
+                with: planeAnchors,
+                isVisible: viewModel.debugShowPlanes,
+                in: arView
+            )
+            let classifiedCounts = planeAnchors.reduce(
+                into: (floor: 0, wall: 0, table: 0, other: 0)
+            ) { counts, anchor in
+                switch anchor.classification {
+                case .floor:
+                    counts.floor += 1
+                case .wall:
+                    counts.wall += 1
+                case .table:
+                    counts.table += 1
+                case .ceiling, .seat, .window, .door:
+                    counts.other += 1
+                case .none:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+            viewModel.updateDebugPlaneClassifications(
+                isSupported: ARPlaneAnchor.isClassificationSupported,
+                floor: classifiedCounts.floor,
+                wall: classifiedCounts.wall,
+                table: classifiedCounts.table,
+                other: classifiedCounts.other
+            )
+
+            if viewModel.debugTraversalEventCounter > handledDebugTraversalEventCount {
+                handledDebugTraversalEventCount = viewModel.debugTraversalEventCounter
+                let cameraTransform = arView.cameraTransform
+                let forward = -SIMD3<Float>(
+                    cameraTransform.matrix.columns.2.x,
+                    cameraTransform.matrix.columns.2.y,
+                    cameraTransform.matrix.columns.2.z
+                )
+                let targetPosition = cameraTransform.translation + forward * 1.2
+
+                if let route = surfacePhaseRouteFactory.makeRoute(
+                    from: planeAnchors,
+                    targetPosition: targetPosition,
+                    cameraPosition: cameraTransform.translation,
+                    selection: .classifiedWalls
+                ) {
+                    traversalDebugRenderer.begin(
+                        route: route,
+                        cameraPosition: cameraTransform.translation,
+                        at: time,
+                        in: arView
+                    )
+                    viewModel.setDebugTraversalStatus("RUNNING")
+                } else {
+                    viewModel.setDebugTraversalStatus("NEED 2 PLANES")
+                }
+            }
+
+            if traversalDebugRenderer.update(at: time, in: arView) {
+                viewModel.setDebugTraversalStatus("COMPLETE")
+            }
+        }
+        #endif
+
         private func bestScannerTarget(in arView: ARView) -> ScannerTarget? {
             let center = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
             let cameraPosition = arView.cameraTransform.translation
 
-            if !viewModel.visibleEssences.isEmpty {
+            #if DEBUG
+            if viewModel.debugAutoLockEnabled, let debugForcedTargetID {
+                if
+                    viewModel.visibleEssences.contains(where: { $0.id == debugForcedTargetID }),
+                    essenceRenderer.isCapturable(id: debugForcedTargetID),
+                    let worldPosition = essenceRenderer.worldPosition(for: debugForcedTargetID)
+                {
+                    return .essence(id: debugForcedTargetID, worldPosition: worldPosition)
+                }
+
+                self.debugForcedTargetID = nil
+            }
+            #endif
+
+            if viewModel.canContainEssence && !viewModel.visibleEssences.isEmpty {
                 return viewModel.visibleEssences
                     .compactMap { essence -> (target: ScannerTarget, screenDistance: CGFloat)? in
                         guard
@@ -251,7 +393,7 @@ extension ARScannerView {
         private func scannerSignalSample(in arView: ARView) -> ScannerSignalSample {
             let cameraPosition = arView.cameraTransform.translation
             let center = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
-            var strongestSignal = 0.08
+            var strongestSignal = viewModel.gameplayPhase == .awakenedHunt ? 0.18 : 0.08
             var anomalyDetected = false
 
             for essence in viewModel.visibleEssences {
@@ -266,6 +408,9 @@ extension ARScannerView {
                 let distance = Double(simd_distance(cameraPosition, worldPosition))
                 let proximity = 1 - min(max((distance - 0.55) / 3.45, 0), 1)
                 var signal = (0.08 + proximity * 0.62) * manifestation
+                if viewModel.gameplayPhase == .awakenedHunt {
+                    signal *= 1.18
+                }
 
                 if
                     let screenPosition = arView.project(worldPosition),
@@ -370,14 +515,19 @@ extension ARScannerView {
             guard let route = surfacePhaseRouteFactory.makeRoute(
                 from: planeAnchors,
                 targetPosition: worldPosition,
-                cameraPosition: arView.cameraTransform.translation
+                cameraPosition: arView.cameraTransform.translation,
+                selection: .classifiedWalls
             ) else {
                 clearVacuumLock()
                 return
             }
 
             clearVacuumLock()
-            lostSoulRenderer.phase(along: route)
+            lostSoulRenderer.noticeAndEscape(
+                along: route,
+                cameraPosition: arView.cameraTransform.translation,
+                at: CACurrentMediaTime()
+            )
         }
 
         private func collectEssence(id: AmbientEssence.ID, in arView: ARView) {
@@ -392,8 +542,11 @@ extension ARScannerView {
             haptic.prepare()
             lockedTargetID = nil
             lockStartedAt = nil
+            #if DEBUG
+            debugForcedTargetID = nil
+            #endif
 
-            if viewModel.visibleEssences.isEmpty {
+            if viewModel.gameplayPhase == .manifestation {
                 lostSoulManifestationReadyAt = CACurrentMediaTime() + 4.8
             }
 
@@ -401,7 +554,14 @@ extension ARScannerView {
         }
 
         private func clearVacuumLock() {
-            guard lockedTargetID != nil || lockStartedAt != nil else {
+            #if DEBUG
+            let hadDebugTarget = debugForcedTargetID != nil
+            debugForcedTargetID = nil
+            #else
+            let hadDebugTarget = false
+            #endif
+
+            guard lockedTargetID != nil || lockStartedAt != nil || hadDebugTarget else {
                 return
             }
 

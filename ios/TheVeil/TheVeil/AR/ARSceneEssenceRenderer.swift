@@ -1,15 +1,15 @@
+import ARKit
 import CoreGraphics
 import RealityKit
 import UIKit
 
 @MainActor
 final class ARSceneEssenceRenderer {
-    private let manifestationDuration: CFTimeInterval = 1.1
-    private let demanifestationDuration: CFTimeInterval = 0.95
-    private let visibleDuration: CFTimeInterval = 3
+    private let lockCompletionGrace: CFTimeInterval = 0.12
     private var renderedEssences: [AmbientEssence.ID: RenderedEssence] = [:]
     private var atmosphereAnchor: AnchorEntity?
     private let vfxFactory = EssenceVFXFactory()
+    private let surfacePhaseRouteFactory = SurfacePhaseRouteFactory()
     private let cyanParticleTexture = ParticleGlowTextureFactory.makeTexture(
         color: UIColor(red: 0.3, green: 0.8, blue: 1, alpha: 1)
     )
@@ -37,20 +37,28 @@ final class ARSceneEssenceRenderer {
         renderAtmosphere(in: arView)
     }
 
-    func updateFloatingMotion(at time: CFTimeInterval) {
+    func updateFloatingMotion(
+        at time: CFTimeInterval,
+        planeAnchors: [ARPlaneAnchor],
+        cameraPosition: SIMD3<Float>
+    ) {
         for renderedEssence in renderedEssences.values {
-            updateManifestation(for: renderedEssence, at: time)
+            if renderedEssence.overloadStartedAt == nil {
+                updateManifestation(
+                    for: renderedEssence,
+                    at: time,
+                    planeAnchors: planeAnchors,
+                    cameraPosition: cameraPosition
+                )
+            }
 
             let shaderTime = Float(time)
             let phase = renderedEssence.motionPhase
-            let drift = SIMD3<Float>(
-                sin(shaderTime * 0.23 + phase) * 0.055 + sin(shaderTime * 0.11 + phase * 2.1) * 0.025,
-                sin(shaderTime * 0.57 + phase * 1.3) * 0.045 + cos(shaderTime * 0.19 + phase) * 0.018,
-                cos(shaderTime * 0.2 + phase * 0.8) * 0.035 + sin(shaderTime * 0.13 + phase) * 0.018
-            )
-            let position = renderedEssence.basePosition + drift
+            let position = motionPosition(for: renderedEssence, at: time)
+            let motionSpeed: Float = renderedEssence.isAwakened ? 0.82 : 0.17
+            let orientationAmount: Float = renderedEssence.isAwakened ? 0.58 : 0.35
             let orientation = simd_quatf(
-                angle: sin(shaderTime * 0.17 + phase) * 0.35,
+                angle: sin(shaderTime * motionSpeed + phase) * orientationAmount,
                 axis: simd_normalize(SIMD3<Float>(0.4, 1, 0.25))
             )
 
@@ -66,8 +74,42 @@ final class ARSceneEssenceRenderer {
                 at: shaderTime,
                 coreLevel: renderedEssence.presentation.core,
                 plasmaLevel: renderedEssence.presentation.plasma,
-                tendrilLevel: renderedEssence.presentation.tendrils
+                tendrilLevel: renderedEssence.presentation.tendrils,
+                basePosition: position,
+                baseOrientation: orientation,
+                overloadFlash: renderedEssence.overloadFlash
             )
+        }
+    }
+
+    func beginAwakening(at time: CFTimeInterval) {
+        let essences = renderedEssences.values.sorted {
+            $0.motionPhase < $1.motionPhase
+        }
+
+        for (index, essence) in essences.enumerated() {
+            let origin = essence.root.position(relativeTo: nil)
+            let angle = Float(index) / Float(max(essences.count, 1)) * 2 * .pi
+                + essence.motionPhase * 0.18
+            let scatter = SIMD3<Float>(
+                cos(angle) * Float.random(in: 0.58...0.88),
+                Float.random(in: -0.28...0.42),
+                sin(angle) * Float.random(in: 0.42...0.72)
+            )
+            let target = boundedAwakenedPosition(origin + scatter)
+
+            essence.isAwakened = true
+            essence.overloadStartedAt = time
+            essence.scatterOrigin = origin
+            essence.scatterTarget = target
+            essence.basePosition = origin
+            essence.lastPosition = origin
+            essence.phaseRoute = nil
+            essence.manifestationPhase = .visible
+            essence.manifestationStartedAt = time
+            essence.visibleDuration = .greatestFiniteMagnitude
+            applyManifestation(progress: 1, to: essence)
+            startEmission(for: essence.particleLayers)
         }
     }
 
@@ -76,7 +118,12 @@ final class ARSceneEssenceRenderer {
     }
 
     func isCapturable(id: AmbientEssence.ID) -> Bool {
-        renderedEssences[id]?.manifestationPhase == .visible
+        guard let essence = renderedEssences[id] else {
+            return false
+        }
+
+        return essence.manifestationPhase == .visible
+            && essence.overloadStartedAt == nil
     }
 
     func manifestationLevel(for id: AmbientEssence.ID) -> Float {
@@ -168,18 +215,21 @@ final class ARSceneEssenceRenderer {
             visualLayers: visualLayers,
             basePosition: essence.position,
             motionPhase: Float.random(in: 0...(2 * .pi)),
-            manifestationStartedAt: CACurrentMediaTime()
+            manifestationStartedAt: CACurrentMediaTime(),
+            phaseInDuration: rollOneD3()
         )
     }
 
     private func updateManifestation(
         for essence: RenderedEssence,
-        at time: CFTimeInterval
+        at time: CFTimeInterval,
+        planeAnchors: [ARPlaneAnchor],
+        cameraPosition: SIMD3<Float>
     ) {
         switch essence.manifestationPhase {
         case .fadingIn:
             let progress = min(
-                max((time - essence.manifestationStartedAt) / manifestationDuration, 0),
+                max((time - essence.manifestationStartedAt) / essence.phaseInDuration, 0),
                 1
             )
             applyManifestation(progress: Float(progress), to: essence)
@@ -187,20 +237,35 @@ final class ARSceneEssenceRenderer {
             if progress >= 1 {
                 essence.manifestationPhase = .visible
                 essence.manifestationStartedAt = time
+                if let route = essence.phaseRoute {
+                    essence.basePosition = route.emergedExitPosition
+                    essence.lastPosition = route.emergedExitPosition
+                    essence.phaseRoute = nil
+                }
+                configureVisiblePhase(for: essence, at: time)
                 applyManifestation(progress: 1, to: essence)
             }
 
         case .visible:
-            guard time - essence.manifestationStartedAt >= visibleDuration else {
+            guard time - essence.manifestationStartedAt >= essence.visibleDuration else {
                 return
             }
 
+            if essence.isAwakened {
+                essence.phaseOrigin = essence.root.position(relativeTo: nil)
+                essence.phaseRoute = surfacePhaseRouteFactory.makeRoute(
+                    from: planeAnchors,
+                    targetPosition: essence.phaseOrigin ?? essence.basePosition,
+                    cameraPosition: cameraPosition
+                )
+            }
             essence.manifestationPhase = .fadingOut
             essence.manifestationStartedAt = time
+            essence.phaseOutDuration = rollOneD3()
 
         case .fadingOut:
             let progress = min(
-                max((time - essence.manifestationStartedAt) / demanifestationDuration, 0),
+                max((time - essence.manifestationStartedAt) / essence.phaseOutDuration, 0),
                 1
             )
             applyManifestation(progress: 1 - Float(progress), to: essence)
@@ -208,7 +273,22 @@ final class ARSceneEssenceRenderer {
             if progress >= 1 {
                 essence.manifestationPhase = .hidden
                 essence.manifestationStartedAt = time
-                essence.hiddenDuration = .random(in: 3...6)
+                essence.hiddenDuration = essence.isAwakened ? rollOneD3() : 0
+                if let route = essence.phaseRoute {
+                    essence.basePosition = route.concealedExitPosition
+                    essence.lastPosition = route.concealedExitPosition
+                } else if essence.isAwakened {
+                    let target = randomAwakenedTarget(from: essence.basePosition)
+                    essence.basePosition = target
+                    essence.lastPosition = target
+                } else {
+                    let target = randomCalmTarget(
+                        from: essence.root.position(relativeTo: nil),
+                        around: cameraPosition
+                    )
+                    essence.basePosition = target
+                    essence.lastPosition = target
+                }
                 applyManifestation(progress: 0, to: essence)
                 stopEmission(for: essence.particleLayers)
             }
@@ -220,8 +300,206 @@ final class ARSceneEssenceRenderer {
 
             essence.manifestationPhase = .fadingIn
             essence.manifestationStartedAt = time
+            essence.phaseInDuration = rollOneD3()
             startEmission(for: essence.particleLayers)
         }
+    }
+
+    private func configureVisiblePhase(
+        for essence: RenderedEssence,
+        at time: CFTimeInterval
+    ) {
+        if essence.isAwakened {
+            let dartingDuration = rollOneD3()
+            let pauseDuration = rollTwoD3() + 0.5 + lockCompletionGrace
+            essence.awakenedMotionPhase = .darting
+            essence.awakenedMotionPhaseEndsAt = time + dartingDuration
+            essence.visibleDuration = dartingDuration + pauseDuration
+            essence.nextDartAt = time
+        } else {
+            essence.visibleDuration = rollTwoD3() + 0.5 + lockCompletionGrace
+        }
+    }
+
+    private func motionPosition(
+        for essence: RenderedEssence,
+        at time: CFTimeInterval
+    ) -> SIMD3<Float> {
+        if let overloadStartedAt = essence.overloadStartedAt {
+            let elapsed = time - overloadStartedAt
+            if elapsed < 0.5 {
+                let flashProgress = Float(min(max((elapsed - 0.22) / 0.28, 0), 1))
+                essence.overloadFlash = smoothStep(flashProgress)
+                essence.lastPosition = essence.scatterOrigin
+                return essence.scatterOrigin
+            }
+
+            let progress = Float(min(max((elapsed - 0.5) / 0.62, 0), 1))
+            let eased = 1 - pow(1 - progress, 3)
+            essence.overloadFlash = max(0, 1 - progress * 2.4)
+            let position = simd_mix(essence.scatterOrigin, essence.scatterTarget, SIMD3<Float>(repeating: eased))
+            essence.lastPosition = position
+
+            if progress >= 1 {
+                essence.overloadStartedAt = nil
+                essence.basePosition = essence.scatterTarget
+                essence.lastPosition = essence.scatterTarget
+                essence.manifestationStartedAt = time
+                essence.overloadFlash = 0
+                configureVisiblePhase(for: essence, at: time)
+            }
+
+            return position
+        }
+
+        if let route = essence.phaseRoute {
+            let phaseElapsed = time - essence.manifestationStartedAt
+            switch essence.manifestationPhase {
+            case .fadingOut:
+                let progress = Float(min(max(phaseElapsed / essence.phaseOutDuration, 0), 1))
+                let origin = essence.phaseOrigin ?? essence.basePosition
+                return simd_mix(
+                    origin,
+                    route.entryPosition,
+                    SIMD3<Float>(repeating: smoothStep(progress))
+                )
+            case .hidden:
+                return route.concealedExitPosition
+            case .fadingIn:
+                let progress = Float(min(max(phaseElapsed / essence.phaseInDuration, 0), 1))
+                return simd_mix(
+                    route.concealedExitPosition,
+                    route.emergedExitPosition,
+                    SIMD3<Float>(repeating: smoothStep(progress))
+                )
+            case .visible:
+                break
+            }
+        }
+
+        if essence.isAwakened {
+            return awakenedMotionPosition(for: essence, at: time)
+        }
+
+        let shaderTime = Float(time)
+        let phase = essence.motionPhase
+        let drift = SIMD3<Float>(
+            sin(shaderTime * 0.23 + phase) * 0.055 + sin(shaderTime * 0.11 + phase * 2.1) * 0.025,
+            sin(shaderTime * 0.57 + phase * 1.3) * 0.045 + cos(shaderTime * 0.19 + phase) * 0.018,
+            cos(shaderTime * 0.2 + phase * 0.8) * 0.035 + sin(shaderTime * 0.13 + phase) * 0.018
+        )
+        let position = essence.basePosition + drift
+        essence.lastPosition = position
+        return position
+    }
+
+    private func awakenedMotionPosition(
+        for essence: RenderedEssence,
+        at time: CFTimeInterval
+    ) -> SIMD3<Float> {
+        if
+            essence.awakenedMotionPhase == .darting,
+            time >= essence.awakenedMotionPhaseEndsAt
+        {
+            essence.awakenedMotionPhase = .paused
+            essence.dartStartedAt = nil
+            essence.basePosition = essence.lastPosition
+            essence.dartTarget = essence.lastPosition
+        }
+
+        if essence.awakenedMotionPhase == .paused {
+            essence.lastPosition = essence.basePosition
+            return essence.basePosition
+        }
+
+        if let dartStartedAt = essence.dartStartedAt {
+            let progress = Float(min(max((time - dartStartedAt) / essence.dartDuration, 0), 1))
+            let anticipation = sin(progress * .pi) * 0.035
+            let eased = progress * progress * (3 - 2 * progress)
+            var position = simd_mix(
+                essence.dartOrigin,
+                essence.dartTarget,
+                SIMD3<Float>(repeating: eased)
+            )
+            position.y += anticipation
+            essence.lastPosition = position
+
+            if progress >= 1 {
+                essence.dartStartedAt = nil
+                essence.basePosition = essence.dartTarget
+                essence.lastPosition = essence.dartTarget
+                essence.nextDartAt = time + .random(in: 0.1...0.32)
+            }
+
+            return position
+        }
+
+        if time >= essence.nextDartAt && essence.manifestationPhase == .visible {
+            essence.dartStartedAt = time
+            essence.dartDuration = .random(in: 0.24...0.48)
+            essence.dartOrigin = essence.lastPosition
+            essence.dartTarget = randomAwakenedTarget(from: essence.basePosition)
+            return essence.lastPosition
+        }
+
+        let shaderTime = Float(time)
+        let hover = SIMD3<Float>(
+            sin(shaderTime * 1.4 + essence.motionPhase) * 0.028,
+            sin(shaderTime * 2.1 + essence.motionPhase * 1.3) * 0.035,
+            cos(shaderTime * 1.15 + essence.motionPhase) * 0.022
+        )
+        let position = essence.basePosition + hover
+        essence.lastPosition = position
+        return position
+    }
+
+    private func randomAwakenedTarget(from origin: SIMD3<Float>) -> SIMD3<Float> {
+        boundedAwakenedPosition(
+            origin + SIMD3<Float>(
+                .random(in: -0.72...0.72),
+                .random(in: -0.36...0.42),
+                .random(in: -0.56...0.56)
+            )
+        )
+    }
+
+    private func randomCalmTarget(
+        from origin: SIMD3<Float>,
+        around cameraPosition: SIMD3<Float>
+    ) -> SIMD3<Float> {
+        let angle = Float.random(in: 0...(2 * .pi))
+        let relocationDistance = Float.random(in: 0.4...1)
+        var candidate = origin + SIMD3<Float>(
+            cos(angle) * relocationDistance,
+            .random(in: -0.28...0.38),
+            sin(angle) * relocationDistance
+        )
+
+        var cameraOffset = candidate - cameraPosition
+        let distanceFromCamera = simd_length(cameraOffset)
+        if distanceFromCamera < 0.001 {
+            cameraOffset = SIMD3<Float>(cos(angle), 0, sin(angle))
+        }
+
+        let playableDistance = min(max(simd_length(cameraOffset), 0.55), 2.25)
+        candidate = cameraPosition + simd_normalize(cameraOffset) * playableDistance
+        return candidate
+    }
+
+    private func boundedAwakenedPosition(_ position: SIMD3<Float>) -> SIMD3<Float> {
+        SIMD3<Float>(
+            min(max(position.x, -1.55), 1.55),
+            min(max(position.y, -0.62), 0.9),
+            min(max(position.z, -2.55), -0.5)
+        )
+    }
+
+    private func rollOneD3() -> CFTimeInterval {
+        CFTimeInterval(Int.random(in: 1...3))
+    }
+
+    private func rollTwoD3() -> CFTimeInterval {
+        CFTimeInterval(Int.random(in: 1...3) + Int.random(in: 1...3))
     }
 
     private func applyManifestation(progress: Float, to essence: RenderedEssence) {
@@ -409,19 +687,42 @@ private enum EssenceManifestationPhase {
     case hidden
 }
 
+private enum AwakenedMotionPhase {
+    case darting
+    case paused
+}
+
 private final class RenderedEssence {
     let anchor: AnchorEntity
     let root: Entity
     let vfx: EssenceVFX
     let particleLayers: [Entity]
     let visualLayers: [Entity]
-    let basePosition: SIMD3<Float>
+    var basePosition: SIMD3<Float>
     let motionPhase: Float
     var manifestationPhase: EssenceManifestationPhase = .fadingIn
     var manifestationStartedAt: CFTimeInterval
+    var phaseInDuration: CFTimeInterval
+    var phaseOutDuration: CFTimeInterval = 1
     var manifestationLevel: Float = 0
     var presentation = EssenceManifestationPresentation.hidden
     var hiddenDuration: CFTimeInterval = 0
+    var visibleDuration: CFTimeInterval = 3
+    var isAwakened = false
+    var overloadStartedAt: CFTimeInterval?
+    var overloadFlash: Float = 0
+    var scatterOrigin = SIMD3<Float>.zero
+    var scatterTarget = SIMD3<Float>.zero
+    var lastPosition: SIMD3<Float>
+    var nextDartAt: CFTimeInterval = .greatestFiniteMagnitude
+    var dartStartedAt: CFTimeInterval?
+    var dartDuration: CFTimeInterval = 0.35
+    var dartOrigin = SIMD3<Float>.zero
+    var dartTarget = SIMD3<Float>.zero
+    var phaseOrigin: SIMD3<Float>?
+    var phaseRoute: SurfacePhaseRoute?
+    var awakenedMotionPhase: AwakenedMotionPhase = .darting
+    var awakenedMotionPhaseEndsAt: CFTimeInterval = .greatestFiniteMagnitude
 
     init(
         anchor: AnchorEntity,
@@ -431,7 +732,8 @@ private final class RenderedEssence {
         visualLayers: [Entity],
         basePosition: SIMD3<Float>,
         motionPhase: Float,
-        manifestationStartedAt: CFTimeInterval
+        manifestationStartedAt: CFTimeInterval,
+        phaseInDuration: CFTimeInterval
     ) {
         self.anchor = anchor
         self.root = root
@@ -439,8 +741,10 @@ private final class RenderedEssence {
         self.particleLayers = particleLayers
         self.visualLayers = visualLayers
         self.basePosition = basePosition
+        self.lastPosition = basePosition
         self.motionPhase = motionPhase
         self.manifestationStartedAt = manifestationStartedAt
+        self.phaseInDuration = phaseInDuration
     }
 }
 

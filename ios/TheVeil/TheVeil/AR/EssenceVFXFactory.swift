@@ -46,8 +46,8 @@ final class EssenceVFXFactory {
 
         guard
             plasmaShells.count == shellSettings.count,
-            let core = makeCore(radius: radius, diameterScale: 1.22, opacity: 1),
-            let coreHalo = makeCore(radius: radius, diameterScale: 2.55, opacity: 0.2),
+            let core = makeCore(radius: radius, diameterScale: 1.32, opacity: 1),
+            let coreHalo = makeCore(radius: radius, diameterScale: 1.92, opacity: 0.34),
             let ribbon = try? ProceduralEssenceRibbon(
                 radius: radius,
                 phase: phase,
@@ -62,6 +62,7 @@ final class EssenceVFXFactory {
             coreHalo: coreHalo,
             plasmaShells: plasmaShells,
             ribbon: ribbon,
+            radius: radius,
             phase: phase
         )
     }
@@ -160,6 +161,7 @@ final class EssenceVFX {
     let entities: [Entity]
 
     private let phase: Float
+    private let radius: Float
     private let plasmaShellScales: [Float]
 
     init(
@@ -167,12 +169,14 @@ final class EssenceVFX {
         coreHalo: ModelEntity,
         plasmaShells: [ModelEntity],
         ribbon: ProceduralEssenceRibbon,
+        radius: Float,
         phase: Float
     ) {
         self.core = core
         self.coreHalo = coreHalo
         self.plasmaShells = plasmaShells
         self.ribbon = ribbon
+        self.radius = radius
         self.phase = phase
         self.plasmaShellScales = plasmaShells.map(\.scale.x)
         self.entities = [coreHalo] + plasmaShells + [ribbon.entity, core]
@@ -180,29 +184,63 @@ final class EssenceVFX {
 
     func update(
         at time: Float,
-        coreLevel: Float = 1,
-        plasmaLevel: Float = 1,
-        tendrilLevel: Float = 1
+        coreLevel: Float,
+        plasmaLevel: Float,
+        tendrilLevel: Float,
+        basePosition: SIMD3<Float>,
+        baseOrientation: simd_quatf,
+        overloadFlash: Float
     ) {
+        core.position = basePosition
+        coreHalo.position = basePosition
+
         let pulse = 0.9 + sin(time * 1.75 + phase) * 0.1
         let coreIgnitionScale = 0.12 + coreLevel * 0.88
-        core.scale = SIMD3<Float>(repeating: pulse * coreIgnitionScale)
+        let flashScale = 1 + overloadFlash * 1.9
+        core.scale = SIMD3<Float>(repeating: pulse * coreIgnitionScale * flashScale)
         let haloPulse = 0.96 + sin(time * 1.2 + phase + 0.7) * 0.08
         let haloIgnitionScale = 0.28 + coreLevel * 0.72
-        coreHalo.scale = SIMD3<Float>(repeating: haloPulse * haloIgnitionScale)
+        let haloFlashScale = 1 + overloadFlash * 2.8
+        coreHalo.scale = SIMD3<Float>(
+            repeating: haloPulse * haloIgnitionScale * haloFlashScale
+        )
+
+        let plasmaDrift = SIMD3<Float>(
+            sin(time * 0.37 + phase) * radius * 0.11,
+            cos(time * 0.29 + phase * 1.4) * radius * 0.08,
+            sin(time * 0.33 + phase * 0.7) * radius * 0.09
+        )
 
         for (index, shell) in plasmaShells.enumerated() {
             let gatheringScale = 1.42 - plasmaLevel * 0.42
             shell.scale = SIMD3<Float>(
                 repeating: plasmaShellScales[index] * gatheringScale
             )
+            let shellDepth = 0.62 + Float(index) * 0.13
+            shell.position = basePosition + plasmaDrift * shellDepth
             let direction: Float = index.isMultiple(of: 2) ? 1 : -1
-            shell.orientation = simd_quatf(
+            let shellSpin = simd_quatf(
                 angle: direction * time * (0.08 + Float(index) * 0.025),
                 axis: simd_normalize(SIMD3<Float>(0.3 + Float(index) * 0.2, 1, 0.18))
             )
+            let shellWobble = simd_quatf(
+                angle: sin(time * (0.21 + Float(index) * 0.025) + phase) * 0.16,
+                axis: simd_normalize(SIMD3<Float>(1, 0.2 + Float(index) * 0.12, 0.42))
+            )
+            shell.orientation = baseOrientation * shellSpin * shellWobble
         }
 
+        let wispDrift = SIMD3<Float>(
+            cos(time * 0.24 + phase * 1.3) * radius * 0.14,
+            sin(time * 0.31 + phase * 0.8) * radius * 0.11,
+            cos(time * 0.27 + phase) * radius * 0.1
+        )
+        ribbon.entity.position = basePosition + wispDrift
+        let wispSway = simd_quatf(
+            angle: sin(time * 0.23 + phase * 1.6) * 0.24,
+            axis: simd_normalize(SIMD3<Float>(0.22, 0.83, 0.51))
+        )
+        ribbon.entity.orientation = baseOrientation * wispSway
         ribbon.update(at: time + phase, reveal: tendrilLevel)
     }
 }
@@ -226,14 +264,14 @@ private enum EssenceCoreTextureFactory {
         let center = CGPoint(x: size / 2, y: size / 2)
         let colors = [
             UIColor.white.cgColor,
-            UIColor(red: 0.55, green: 0.9, blue: 1, alpha: 0.95).cgColor,
-            UIColor(red: 0.28, green: 0.34, blue: 1, alpha: 0.42).cgColor,
+            UIColor(red: 0.72, green: 0.96, blue: 1, alpha: 1).cgColor,
+            UIColor(red: 0.25, green: 0.5, blue: 1, alpha: 0.5).cgColor,
             UIColor.clear.cgColor
         ] as CFArray
         guard let gradient = CGGradient(
             colorsSpace: colorSpace,
             colors: colors,
-            locations: [0, 0.13, 0.42, 1]
+            locations: [0, 0.16, 0.38, 1]
         ) else {
             return nil
         }
@@ -259,7 +297,7 @@ private enum EssenceCoreTextureFactory {
         context.strokePath()
 
         context.setFillColor(UIColor.white.cgColor)
-        context.fillEllipse(in: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14))
+        context.fillEllipse(in: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18))
 
         guard let image = context.makeImage() else {
             return nil

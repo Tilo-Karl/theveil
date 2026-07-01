@@ -2,6 +2,11 @@ import ARKit
 import simd
 
 struct SurfacePhaseRouteFactory {
+    enum SurfaceSelection {
+        case anyPlane
+        case classifiedWalls
+    }
+
     private let maximumSurfaceDistance: Float = 3
     private let maximumEntrySurfaceDistance: Float = 2.5
     private let maximumExitDistance: Float = 3
@@ -12,9 +17,22 @@ struct SurfacePhaseRouteFactory {
     func makeRoute(
         from planeAnchors: [ARPlaneAnchor],
         targetPosition: SIMD3<Float>,
-        cameraPosition: SIMD3<Float>
+        cameraPosition: SIMD3<Float>,
+        selection: SurfaceSelection = .anyPlane
     ) -> SurfacePhaseRoute? {
-        let surfaces = planeAnchors.compactMap {
+        let eligibleAnchors = planeAnchors.filter { planeAnchor in
+            switch selection {
+            case .anyPlane:
+                return true
+            case .classifiedWalls:
+                if ARPlaneAnchor.isClassificationSupported {
+                    return planeAnchor.classification == .wall
+                }
+                return planeAnchor.alignment == .vertical
+            }
+        }
+
+        let surfaces = eligibleAnchors.compactMap {
             makeSurface(from: $0, facing: cameraPosition)
         }
         .filter {

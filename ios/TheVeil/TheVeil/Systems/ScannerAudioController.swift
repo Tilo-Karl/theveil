@@ -11,6 +11,7 @@ final class ScannerAudioController: ObservableObject {
     private let scannerNoiseBuffer: AVAudioPCMBuffer
     private let detectionBeepBuffer: AVAudioPCMBuffer
     private let containmentChirpBuffer: AVAudioPCMBuffer
+    private let overloadPulseBuffer: AVAudioPCMBuffer
 
     private var humScheduled = false
     private var scannerNoiseScheduled = false
@@ -24,6 +25,7 @@ final class ScannerAudioController: ObservableObject {
         scannerNoiseBuffer = Self.makeScannerNoiseBuffer(format: format)
         detectionBeepBuffer = Self.makeDetectionBeepBuffer(format: format)
         containmentChirpBuffer = Self.makeContainmentChirpBuffer(format: format)
+        overloadPulseBuffer = Self.makeOverloadPulseBuffer(format: format)
 
         engine.attach(humNode)
         engine.attach(scannerNoiseNode)
@@ -73,6 +75,10 @@ final class ScannerAudioController: ObservableObject {
 
     func playContainmentChirp() {
         playEffect(containmentChirpBuffer)
+    }
+
+    func playOverloadPulse() {
+        playEffect(overloadPulseBuffer)
     }
 
     func stop() {
@@ -177,6 +183,34 @@ final class ScannerAudioController: ObservableObject {
             let envelope = sin(.pi * progress)
             let overtone = sin(phase * 2.01) * 0.035
             samples[index] = (sin(phase) * 0.16 + overtone) * envelope
+        }
+
+        return buffer
+    }
+
+    private static func makeOverloadPulseBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
+        let duration: Float = 1.15
+        let frameCount = AVAudioFrameCount(format.sampleRate * Double(duration))
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        buffer.frameLength = frameCount
+
+        let samples = buffer.floatChannelData![0]
+        var phase: Float = 0
+        var seed: UInt32 = 0xC013_37A1
+        for index in 0..<Int(frameCount) {
+            let progress = Float(index) / Float(max(Int(frameCount) - 1, 1))
+            let time = Float(index) / Float(format.sampleRate)
+            let frequency = 78 - progress * 34
+            phase += 2 * .pi * frequency / Float(format.sampleRate)
+            let attack = min(progress / 0.045, 1)
+            let decay = pow(max(1 - progress, 0), 1.65)
+            let envelope = attack * decay
+
+            seed = 1_664_525 &* seed &+ 1_013_904_223
+            let noise = Float(seed & 0x00FF_FFFF) / Float(0x00FF_FFFF) * 2 - 1
+            let electricalSnap = exp(-pow((time - 0.48) / 0.025, 2)) * noise * 0.12
+            let sub = sin(phase) * 0.24 + sin(phase * 2.01) * 0.055
+            samples[index] = sub * envelope + electricalSnap
         }
 
         return buffer

@@ -13,8 +13,20 @@ enum ScannerSignalMode: Equatable {
     case locking
 }
 
+enum ScannerGameplayPhase: Equatable {
+    case calmSearch
+    case charged
+    case overloading
+    case awakenedHunt
+    case manifestation
+}
+
 enum ScannerNotice: Equatable {
     case essenceContained
+    case capacitorCharged
+    case containmentCellCrafted
+    case overloading
+    case awakenedHunt
     case synchronizing
     case entityCatalogued
     case libraryUpdated
@@ -22,6 +34,8 @@ enum ScannerNotice: Equatable {
 
 @MainActor
 final class ARScannerViewModel: ObservableObject {
+    private static let wispIdentificationKey = "veilogy.willOTheWisp.identified"
+
     let scannerStateStore: ARScannerStateStore
     let inventoryStore: EssenceInventoryStore
     let visibleEssenceStore: VisibleEssenceStore
@@ -38,11 +52,31 @@ final class ARScannerViewModel: ObservableObject {
     @Published private(set) var scannerNotice: ScannerNotice?
     @Published private(set) var detectionEventCounter = 0
     @Published private(set) var containmentEventCounter = 0
+    @Published private(set) var overloadEventCounter = 0
+    @Published private(set) var gameplayPhase: ScannerGameplayPhase = .calmSearch
+    @Published private(set) var awakenedContainedCount = 0
+    @Published private(set) var overloadStartedAt: Date?
+    @Published private(set) var essenceFieldRevision = 0
+    @Published private(set) var hasIdentifiedWisp = false
+    #if DEBUG
+    @Published private(set) var debugAutoLockEnabled = false
+    @Published private(set) var debugShowPlanes = false
+    @Published private(set) var debugPlaneClassificationSupported = false
+    @Published private(set) var debugFloorPlaneCount = 0
+    @Published private(set) var debugWallPlaneCount = 0
+    @Published private(set) var debugTablePlaneCount = 0
+    @Published private(set) var debugOtherPlaneCount = 0
+    @Published private(set) var debugTraversalEventCounter = 0
+    @Published private(set) var debugTraversalStatus = "READY"
+    #endif
 
     private var startupBeganAt: CFTimeInterval?
     private var noticeTask: Task<Void, Never>?
+    private var overloadTask: Task<Void, Never>?
     private let bootDuration: CFTimeInterval = 2.4
     private let lensEngagementDuration: CFTimeInterval = 1
+    let calmContainmentGoal = 5
+    let awakenedContainmentGoal = 3
 
     @MainActor
     init() {
@@ -51,6 +85,7 @@ final class ARScannerViewModel: ObservableObject {
         self.visibleEssenceStore = VisibleEssenceStore()
         self.lostSoulStore = LostSoulStore()
         self.essenceFactory = AmbientEssenceFactory()
+        self.hasIdentifiedWisp = UserDefaults.standard.bool(forKey: Self.wispIdentificationKey)
 
         prepareScannerField()
     }
@@ -68,6 +103,7 @@ final class ARScannerViewModel: ObservableObject {
         self.visibleEssenceStore = visibleEssenceStore
         self.lostSoulStore = lostSoulStore
         self.essenceFactory = essenceFactory
+        self.hasIdentifiedWisp = UserDefaults.standard.bool(forKey: Self.wispIdentificationKey)
 
         prepareScannerField()
     }
@@ -78,6 +114,49 @@ final class ARScannerViewModel: ObservableObject {
 
     var isScannerActive: Bool {
         startupPhase == .active
+    }
+
+    var canContainEssence: Bool {
+        gameplayPhase == .calmSearch || gameplayPhase == .awakenedHunt
+    }
+
+    var displayedContainedCount: Int {
+        min(inventoryStore.capacitorEssenceCount, calmContainmentGoal)
+    }
+
+    var displayedContainmentGoal: Int {
+        calmContainmentGoal
+    }
+
+    var counterLabel: String {
+        AppStrings.essenceCounterLabel
+    }
+
+    var noticeContainedCount: Int {
+        gameplayPhase == .manifestation
+            ? awakenedContainedCount
+            : displayedContainedCount
+    }
+
+    var noticeRequiredCount: Int {
+        gameplayPhase == .manifestation
+            ? awakenedContainmentGoal
+            : calmContainmentGoal
+    }
+
+    var fieldCounterLabel: String {
+        switch gameplayPhase {
+        case .calmSearch:
+            return "FIELD"
+        case .charged:
+            return "DORMANT"
+        case .overloading:
+            return "RELEASING"
+        case .awakenedHunt:
+            return "ACTIVE"
+        case .manifestation:
+            return "RESONANCE"
+        }
     }
 
     func updateScannerStartup(at time: CFTimeInterval) {
@@ -115,20 +194,100 @@ final class ARScannerViewModel: ObservableObject {
     }
 
     func collectEssence(id: AmbientEssence.ID) -> Bool {
+        guard canContainEssence else {
+            return false
+        }
+
         guard let essence = visibleEssenceStore.remove(id: id) else {
             return false
         }
 
         clearLockOn()
         inventoryStore.collect(essence)
-        presentContainmentFeedback()
 
-        if visibleEssenceStore.visibleEssenceCount == 0 {
+        switch gameplayPhase {
+        case .calmSearch:
+            if inventoryStore.capacitorEssenceCount >= calmContainmentGoal {
+                gameplayPhase = .charged
+                scannerStateStore.setStatus(.charged)
+            }
+            presentContainmentFeedback()
+
+        case .awakenedHunt:
+            awakenedContainedCount += essence.value
+            if awakenedContainedCount >= awakenedContainmentGoal {
+                gameplayPhase = .manifestation
+                scannerStateStore.setStatus(.lostSoulManifested)
+            }
+            presentContainmentFeedback()
+
+        case .charged, .overloading, .manifestation:
+            return false
+        }
+
+        if gameplayPhase == .manifestation {
+            hasIdentifiedWisp = true
+            UserDefaults.standard.set(true, forKey: Self.wispIdentificationKey)
             lostSoulStore.manifest(LostSoul(id: UUID()))
-            scannerStateStore.setStatus(.lostSoulManifested)
         }
 
         return true
+    }
+
+    func activateOverload() {
+        guard
+            gameplayPhase == .charged,
+            inventoryStore.spend(calmContainmentGoal)
+        else {
+            return
+        }
+
+        noticeTask?.cancel()
+        overloadTask?.cancel()
+        clearLockOn()
+        gameplayPhase = .overloading
+        scannerStateStore.setStatus(.overloading)
+        scannerNotice = .overloading
+        overloadStartedAt = Date()
+        overloadEventCounter += 1
+
+        overloadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard await wait(milliseconds: 1_250) else { return }
+
+            gameplayPhase = .awakenedHunt
+            scannerStateStore.setStatus(.hunting)
+            scannerNotice = .awakenedHunt
+            guard await wait(milliseconds: 1_100) else { return }
+            scannerNotice = nil
+        }
+    }
+
+    func craftContainmentCell() {
+        guard
+            gameplayPhase == .charged,
+            inventoryStore.craftContainmentCell(cost: calmContainmentGoal)
+        else {
+            return
+        }
+
+        noticeTask?.cancel()
+        overloadTask?.cancel()
+        clearLockOn()
+        scannerNotice = .containmentCellCrafted
+        containmentEventCounter += 1
+        visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
+        lostSoulStore.clear()
+        awakenedContainedCount = 0
+        gameplayPhase = .calmSearch
+        scannerStateStore.setStatus(.scanning)
+        essenceFieldRevision += 1
+
+        noticeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard await wait(milliseconds: 1_500) else { return }
+            scannerNotice = nil
+        }
     }
 
     func updateSpectralSignal(
@@ -169,9 +328,58 @@ final class ARScannerViewModel: ObservableObject {
         lockOnProgress = 0
     }
 
+    #if DEBUG
+    func setDebugAutoLockEnabled(_ enabled: Bool) {
+        debugAutoLockEnabled = enabled
+        if !enabled {
+            clearLockOn()
+        }
+    }
+
+    func setDebugShowPlanes(_ enabled: Bool) {
+        debugShowPlanes = enabled
+    }
+
+    func updateDebugPlaneClassifications(
+        isSupported: Bool,
+        floor: Int,
+        wall: Int,
+        table: Int,
+        other: Int
+    ) {
+        if debugPlaneClassificationSupported != isSupported {
+            debugPlaneClassificationSupported = isSupported
+        }
+        if debugFloorPlaneCount != floor {
+            debugFloorPlaneCount = floor
+        }
+        if debugWallPlaneCount != wall {
+            debugWallPlaneCount = wall
+        }
+        if debugTablePlaneCount != table {
+            debugTablePlaneCount = table
+        }
+        if debugOtherPlaneCount != other {
+            debugOtherPlaneCount = other
+        }
+    }
+
+    func requestDebugSurfaceTraversal() {
+        debugTraversalStatus = "SEARCHING"
+        debugTraversalEventCounter += 1
+    }
+
+    func setDebugTraversalStatus(_ status: String) {
+        debugTraversalStatus = status
+    }
+    #endif
+
     private func prepareScannerField() {
         visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
         lostSoulStore.clear()
+        gameplayPhase = .calmSearch
+        awakenedContainedCount = 0
+        overloadStartedAt = nil
         scannerStateStore.setStatus(.scanning)
     }
 
@@ -180,15 +388,18 @@ final class ARScannerViewModel: ObservableObject {
         scannerNotice = .essenceContained
         noticeTask?.cancel()
 
-        let requiredCount = inventoryStore.ambientEssenceCount
-            + visibleEssenceStore.visibleEssenceCount
-        let hasCompleteSampleSet = inventoryStore.ambientEssenceCount >= requiredCount
-
         noticeTask = Task { @MainActor [weak self] in
             guard let self else { return }
             guard await wait(milliseconds: 900) else { return }
 
-            guard hasCompleteSampleSet else {
+            if gameplayPhase == .charged {
+                scannerNotice = .capacitorCharged
+                guard await wait(milliseconds: 1_350) else { return }
+                scannerNotice = nil
+                return
+            }
+
+            guard gameplayPhase == .manifestation else {
                 scannerNotice = nil
                 return
             }

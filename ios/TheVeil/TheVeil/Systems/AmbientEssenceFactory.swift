@@ -8,7 +8,10 @@ struct AmbientEssenceFactory {
             makeEssence(position: SIMD3<Float>(-0.72, 0.16, -1.20)),
             makeEssence(position: SIMD3<Float>(0.78, -0.22, -1.48)),
             makeEssence(position: SIMD3<Float>(-0.92, 0.46, -1.72)),
-            makeEssence(position: SIMD3<Float>(0.84, 0.52, -2.02))
+            makeEssence(position: SIMD3<Float>(0.84, 0.52, -2.02)),
+            makeEssence(position: SIMD3<Float>(-0.34, -0.38, -1.58)),
+            makeEssence(position: SIMD3<Float>(0.44, 0.28, -1.82)),
+            makeEssence(position: SIMD3<Float>(-0.64, -0.08, -2.16))
         ]
     }
 

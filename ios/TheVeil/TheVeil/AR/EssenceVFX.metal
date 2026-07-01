@@ -47,9 +47,33 @@ void essencePlasmaGeometry(realitykit::geometry_parameters params) {
     float3 normal = geometry.normal();
     float4 controls = params.uniforms().custom_parameter();
     float time = params.uniforms().time();
+    float3 direction = normalize(position);
+    float3 phaseAxis = normalize(float3(
+        cos(controls.z * 1.7),
+        0.45 + sin(controls.z * 2.3),
+        sin(controls.z * 1.1)
+    ));
     float noise = essenceFBM(position * 35.0 + float3(0, time * 0.24, controls.z * 11.0));
+    float lobeNoise = essenceFBM(
+        direction * 2.6
+            + phaseAxis * 1.9
+            + float3(time * 0.09, -time * 0.07, time * 0.05)
+    );
+    float directionalLobe = sin(
+        dot(direction, phaseAxis) * 4.1
+            + time * 0.31
+            + controls.z * 2.7
+    );
     float pulse = sin(time * 1.3 + controls.z * 6.28) * 0.5 + 0.5;
-    float displacement = (noise - 0.48) * controls.x * (0.72 + pulse * 0.28);
+    float outerWeight = 1.0 - smoothstep(0.8, 3.4, controls.y);
+    float fineDisplacement = (noise - 0.48) * controls.x * (0.72 + pulse * 0.28);
+    float silhouetteDisplacement = (
+        (lobeNoise - 0.5) * 1.45 + directionalLobe * 0.34
+    ) * controls.x * (0.62 + outerWeight * 0.88);
+    float directionalStretch = dot(direction, phaseAxis)
+        * controls.x
+        * (0.12 + outerWeight * 0.22);
+    float displacement = fineDisplacement + silhouetteDisplacement + directionalStretch;
     geometry.set_model_position_offset(normal * displacement);
 }
 
