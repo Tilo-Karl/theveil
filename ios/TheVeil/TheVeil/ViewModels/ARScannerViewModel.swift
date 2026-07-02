@@ -60,13 +60,7 @@ final class ARScannerViewModel: ObservableObject {
     @Published private(set) var hasIdentifiedWisp = false
     #if DEBUG
     @Published private(set) var debugAutoLockEnabled = false
-    @Published private(set) var debugShowPlanes = false
-    @Published private(set) var debugPlaneClassificationSupported = false
-    @Published private(set) var debugFloorPlaneCount = 0
-    @Published private(set) var debugWallPlaneCount = 0
-    @Published private(set) var debugTablePlaneCount = 0
-    @Published private(set) var debugOtherPlaneCount = 0
-    @Published private(set) var debugTraversalEventCounter = 0
+    @Published private(set) var debugPhaseCubeEnabled = false
     @Published private(set) var debugTraversalStatus = "READY"
     #endif
 
@@ -336,41 +330,15 @@ final class ARScannerViewModel: ObservableObject {
         }
     }
 
-    func setDebugShowPlanes(_ enabled: Bool) {
-        debugShowPlanes = enabled
-    }
-
-    func updateDebugPlaneClassifications(
-        isSupported: Bool,
-        floor: Int,
-        wall: Int,
-        table: Int,
-        other: Int
-    ) {
-        if debugPlaneClassificationSupported != isSupported {
-            debugPlaneClassificationSupported = isSupported
-        }
-        if debugFloorPlaneCount != floor {
-            debugFloorPlaneCount = floor
-        }
-        if debugWallPlaneCount != wall {
-            debugWallPlaneCount = wall
-        }
-        if debugTablePlaneCount != table {
-            debugTablePlaneCount = table
-        }
-        if debugOtherPlaneCount != other {
-            debugOtherPlaneCount = other
-        }
-    }
-
-    func requestDebugSurfaceTraversal() {
-        debugTraversalStatus = "SEARCHING"
-        debugTraversalEventCounter += 1
+    func setDebugPhaseCubeEnabled(_ enabled: Bool) {
+        debugPhaseCubeEnabled = enabled
+        debugTraversalStatus = enabled ? "STARTING" : "READY"
     }
 
     func setDebugTraversalStatus(_ status: String) {
-        debugTraversalStatus = status
+        if debugTraversalStatus != status {
+            debugTraversalStatus = status
+        }
     }
     #endif
 

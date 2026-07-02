@@ -134,7 +134,7 @@ final class ARPlaneDebugRenderer {
         )
         fill.position = SIMD3<Float>(
             renderedPlane.center.x,
-            -0.002,
+            renderedPlane.center.y,
             renderedPlane.center.z
         )
         renderedPlane.root.addChild(fill)
@@ -156,13 +156,13 @@ final class ARPlaneDebugRenderer {
 
         for z in [-halfDepth, halfDepth] {
             let edge = ModelEntity(mesh: horizontalEdge, materials: [outlineMaterial])
-            edge.position = SIMD3<Float>(renderedPlane.center.x, 0, renderedPlane.center.z + z)
+            edge.position = SIMD3<Float>(renderedPlane.center.x, renderedPlane.center.y, renderedPlane.center.z + z)
             renderedPlane.root.addChild(edge)
         }
 
         for x in [-halfWidth, halfWidth] {
             let edge = ModelEntity(mesh: verticalEdge, materials: [outlineMaterial])
-            edge.position = SIMD3<Float>(renderedPlane.center.x + x, 0, renderedPlane.center.z)
+            edge.position = SIMD3<Float>(renderedPlane.center.x + x, renderedPlane.center.y, renderedPlane.center.z)
             renderedPlane.root.addChild(edge)
         }
     }

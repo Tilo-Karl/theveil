@@ -46,7 +46,9 @@ extension ARScannerView {
         private var handledOverloadEventCount = 0
         #if DEBUG
         private var debugForcedTargetID: AmbientEssence.ID?
+        private let planeDebugRenderer = ARPlaneDebugRenderer()
         private let traversalDebugRenderer = ARSurfaceTraversalDebugRenderer()
+        private var handledDebugTraversalEventCount = 0
         #endif
 
         private let essenceCollectionDistance: Float = 1
@@ -95,6 +97,7 @@ extension ARScannerView {
             displayLink = nil
             if let arView {
                 #if DEBUG
+                planeDebugRenderer.removeAll(from: arView)
                 traversalDebugRenderer.remove(from: arView)
                 #endif
             }
@@ -172,11 +175,7 @@ extension ARScannerView {
             }
 
             #if DEBUG
-            updateSurfacePhaseDebug(
-                with: stablePlanes,
-                at: displayLink.timestamp,
-                in: arView
-            )
+            updatePlaneDebug(with: rawPlaneAnchors, at: displayLink.timestamp, in: arView)
             #endif
 
             if hasRenderedEssenceField {
@@ -264,29 +263,74 @@ extension ARScannerView {
         }
 
         #if DEBUG
-        private func updateSurfacePhaseDebug(
+        private func updatePlaneDebug(
             with planeAnchors: [ARPlaneAnchor],
             at time: CFTimeInterval,
             in arView: ARView
         ) {
-            guard viewModel.debugPhaseCubeEnabled else {
-                traversalDebugRenderer.remove(from: arView)
-                viewModel.setDebugTraversalStatus("READY")
-                return
+            planeDebugRenderer.update(
+                with: planeAnchors,
+                isVisible: viewModel.debugShowPlanes,
+                in: arView
+            )
+            let classifiedCounts = planeAnchors.reduce(
+                into: (floor: 0, wall: 0, table: 0, other: 0)
+            ) { counts, anchor in
+                switch anchor.classification {
+                case .floor:
+                    counts.floor += 1
+                case .wall:
+                    counts.wall += 1
+                case .table:
+                    counts.table += 1
+                case .ceiling, .seat, .window, .door:
+                    counts.other += 1
+                case .none:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+            viewModel.updateDebugPlaneClassifications(
+                isSupported: ARPlaneAnchor.isClassificationSupported,
+                floor: classifiedCounts.floor,
+                wall: classifiedCounts.wall,
+                table: classifiedCounts.table,
+                other: classifiedCounts.other
+            )
+
+            if viewModel.debugTraversalEventCounter > handledDebugTraversalEventCount {
+                handledDebugTraversalEventCount = viewModel.debugTraversalEventCounter
+                let cameraTransform = arView.cameraTransform
+                let forward = -SIMD3<Float>(
+                    cameraTransform.matrix.columns.2.x,
+                    cameraTransform.matrix.columns.2.y,
+                    cameraTransform.matrix.columns.2.z
+                )
+                let targetPosition = cameraTransform.translation + forward * 1.2
+
+                let stablePlanes = planeCache.stablePlanes(at: time)
+                if let route = surfacePhaseRouteFactory.makeRoute(
+                    from: stablePlanes,
+                    targetPosition: targetPosition,
+                    cameraPosition: cameraTransform.translation,
+                    selection: .classifiedWalls
+                ) {
+                    traversalDebugRenderer.begin(
+                        route: route,
+                        cameraPosition: cameraTransform.translation,
+                        at: time,
+                        in: arView
+                    )
+                    viewModel.setDebugTraversalStatus("RUNNING")
+                } else {
+                    viewModel.setDebugTraversalStatus("NEED 2 PLANES")
+                }
             }
 
-            traversalDebugRenderer.startIfNeeded(
-                cameraTransform: arView.cameraTransform,
-                at: time,
-                in: arView
-            )
-            let status = traversalDebugRenderer.update(
-                at: time,
-                planeAnchors: planeAnchors,
-                cameraPosition: arView.cameraTransform.translation,
-                in: arView
-            )
-            viewModel.setDebugTraversalStatus(status)
+            if traversalDebugRenderer.update(at: time, in: arView) {
+                viewModel.setDebugTraversalStatus("COMPLETE")
+            }
         }
         #endif
 

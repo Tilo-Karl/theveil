@@ -85,17 +85,11 @@ struct ARScannerScreen: View {
                             get: { viewModel.debugAutoLockEnabled },
                             set: { viewModel.setDebugAutoLockEnabled($0) }
                         ),
-                        showPlanes: Binding(
-                            get: { viewModel.debugShowPlanes },
-                            set: { viewModel.setDebugShowPlanes($0) }
+                        phaseCube: Binding(
+                            get: { viewModel.debugPhaseCubeEnabled },
+                            set: { viewModel.setDebugPhaseCubeEnabled($0) }
                         ),
-                        classificationSupported: viewModel.debugPlaneClassificationSupported,
-                        floorCount: viewModel.debugFloorPlaneCount,
-                        wallCount: viewModel.debugWallPlaneCount,
-                        tableCount: viewModel.debugTablePlaneCount,
-                        otherCount: viewModel.debugOtherPlaneCount,
-                        traversalStatus: viewModel.debugTraversalStatus,
-                        testTraversal: viewModel.requestDebugSurfaceTraversal
+                        traversalStatus: viewModel.debugTraversalStatus
                     )
                 }
                 .padding(.horizontal, 20)
@@ -155,44 +149,22 @@ struct ARScannerScreen: View {
 #if DEBUG
 private struct DebugScannerControls: View {
     @Binding var autoLock: Bool
-    @Binding var showPlanes: Bool
-    let classificationSupported: Bool
-    let floorCount: Int
-    let wallCount: Int
-    let tableCount: Int
-    let otherCount: Int
+    @Binding var phaseCube: Bool
     let traversalStatus: String
-    let testTraversal: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Toggle(isOn: $autoLock) {
                 Label("AUTO LOCK", systemImage: "scope")
             }
-            Toggle(isOn: $showPlanes) {
-                Label("PLANES", systemImage: "square.3.layers.3d")
+            Toggle(isOn: $phaseCube) {
+                Label("PHASE CUBE", systemImage: "cube.transparent")
             }
 
-            if classificationSupported {
-                HStack(spacing: 8) {
-                    planeCount("F", count: floorCount, color: .white)
-                    planeCount("W", count: wallCount, color: .green)
-                    planeCount("T", count: tableCount, color: .blue)
-                    planeCount("O", count: otherCount, color: .cyan)
-                }
-            } else {
-                Text("CLASSIFICATION UNAVAILABLE")
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.yellow)
-            }
-
-            Button(action: testTraversal) {
-                Label("TEST CUBE  \(traversalStatus)", systemImage: "cube.transparent")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.cyan)
+            Text(traversalStatus)
+                .foregroundStyle(.cyan)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .font(.caption2.monospaced().weight(.semibold))
         .toggleStyle(.switch)
@@ -206,15 +178,6 @@ private struct DebugScannerControls: View {
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 5))
-    }
-
-    private func planeCount(_ label: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "square.fill")
-                .foregroundStyle(color)
-            Text("\(label)\(count)")
-                .foregroundStyle(color)
-        }
     }
 }
 #endif

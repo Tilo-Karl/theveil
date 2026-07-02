@@ -95,11 +95,22 @@ final class ProceduralEssenceRibbon {
 
         entity = ModelEntity(mesh: meshResource, materials: [material])
         entity.components.set(GroundingShadowComponent(castsShadow: false, receivesShadow: false))
-        update(at: 0, reveal: 1)
+        update(
+            at: 0,
+            reveal: 1,
+            trailDirection: SIMD3<Float>(0, -1, 0),
+            trailStrength: 0.2
+        )
     }
 
-    func update(at time: Float, reveal: Float) {
+    func update(
+        at time: Float,
+        reveal: Float,
+        trailDirection: SIMD3<Float>,
+        trailStrength: Float
+    ) {
         let reveal = min(max(reveal, 0), 1)
+        let trailStrength = min(max(trailStrength, 0), 1)
 
         mesh.replaceUnsafeMutableBytes(bufferIndex: 0) { rawBuffer in
             let vertices = rawBuffer.bindMemory(to: RibbonVertex.self)
@@ -111,17 +122,23 @@ final class ProceduralEssenceRibbon {
                     let center = pathPoint(
                         ribbonIndex: ribbonIndex,
                         progress: revealedProgress,
-                        time: time
+                        time: time,
+                        trailDirection: trailDirection,
+                        trailStrength: trailStrength
                     ) * reveal
                     let previous = pathPoint(
                         ribbonIndex: ribbonIndex,
                         progress: max(0, revealedProgress - 0.015 * reveal),
-                        time: time
+                        time: time,
+                        trailDirection: trailDirection,
+                        trailStrength: trailStrength
                     ) * reveal
                     let next = pathPoint(
                         ribbonIndex: ribbonIndex,
                         progress: min(reveal, revealedProgress + 0.015 * reveal),
-                        time: time
+                        time: time,
+                        trailDirection: trailDirection,
+                        trailStrength: trailStrength
                     ) * reveal
                     let tangent = safeNormalize(next - previous, fallback: SIMD3<Float>(0, 1, 0))
                     let reference = abs(tangent.y) > 0.88
@@ -169,7 +186,9 @@ final class ProceduralEssenceRibbon {
     private func pathPoint(
         ribbonIndex: Int,
         progress t: Float,
-        time: Float
+        time: Float,
+        trailDirection: SIMD3<Float>,
+        trailStrength: Float
     ) -> SIMD3<Float> {
         let ribbon = Float(ribbonIndex)
         let direction: Float = ribbonIndex.isMultiple(of: 2) ? 1 : -1
@@ -183,11 +202,12 @@ final class ProceduralEssenceRibbon {
             let radial = radius * (0.76 + sin(time * 0.47 + t * 9 + ribbon) * 0.11)
             let tilt = 0.28 + ribbon * 0.13
 
-            return SIMD3<Float>(
+            let orbit = SIMD3<Float>(
                 cos(angle) * radial,
                 sin(angle + ribbon * 0.7) * radial * tilt,
                 sin(angle) * radial * (0.72 + ribbon * 0.06)
             )
+            return orbit + trailDirection * t * radius * 0.22 * trailStrength
         }
 
         let wisp = ribbon - 3
@@ -223,6 +243,7 @@ final class ProceduralEssenceRibbon {
         }
         return vector / sqrt(lengthSquared)
     }
+
 }
 
 private struct RibbonVertex {

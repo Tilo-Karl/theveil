@@ -25,7 +25,9 @@ struct SurfacePhaseRouteFactory {
         let surfaces = buildDetectedSurfaces(from: eligibleAnchors, camera: cameraPosition)
             .filter { simd_distance($0.position, cameraPosition) <= maximumSurfaceDistance }
 
-        guard surfaces.count >= 2 else { return nil }
+        guard surfaces.count >= 2 else {
+            return makeFallbackRoute(from: surfaces, target: targetPosition, camera: cameraPosition)
+        }
 
         guard let entrySurface = selectEntrySurface(from: surfaces, target: targetPosition) else {
             return nil
@@ -108,6 +110,25 @@ struct SurfacePhaseRouteFactory {
             }
     }
 
+    private func makeFallbackRoute(
+        from surfaces: [DetectedSurface],
+        target: SIMD3<Float>,
+        camera: SIMD3<Float>
+    ) -> SurfacePhaseRoute? {
+        guard let surface = surfaces.first else { return nil }
+
+        let entryPosition = surface.position + surface.normal * surfaceInset
+        let fallbackExitDirection = simd_normalize(camera - target)
+        let concealedExit = target + fallbackExitDirection * 1.2
+        let emergedExit = concealedExit + fallbackExitDirection * emergenceDistance
+
+        return SurfacePhaseRoute(
+            entryPosition: entryPosition,
+            concealedExitPosition: concealedExit,
+            emergedExitPosition: emergedExit
+        )
+    }
+
     private func calculateExitVisibility(_ surface: DetectedSurface, from camera: SIMD3<Float>) -> Float {
         let toCamera = camera - surface.position
         let distance = simd_length(toCamera)
@@ -127,10 +148,8 @@ struct SurfacePhaseRouteFactory {
 
         return SurfacePhaseRoute(
             entryPosition: entryPosition,
-            entryNormal: entry.normal,
             concealedExitPosition: concealedExitPosition,
-            emergedExitPosition: emergedExitPosition,
-            exitNormal: exit.normal
+            emergedExitPosition: emergedExitPosition
         )
     }
 
@@ -138,16 +157,46 @@ struct SurfacePhaseRouteFactory {
         from planeAnchor: ARPlaneAnchor,
         camera: SIMD3<Float>
     ) -> DetectedSurface? {
-        let surface = ARPlaneSurfaceGeometry.location(
-            on: planeAnchor,
-            nearestTo: camera,
-            normalFacing: camera
+        let closestPoint = nearestPointOnPlane(planeAnchor, to: camera)
+        var normal = planeNormal(planeAnchor)
+        normal = ensureNormalPointsAwayFromCamera(normal, surface: closestPoint, camera: camera)
+
+        return DetectedSurface(id: planeAnchor.identifier, position: closestPoint, normal: normal)
+    }
+
+    private func nearestPointOnPlane(
+        _ anchor: ARPlaneAnchor,
+        to camera: SIMD3<Float>
+    ) -> SIMD3<Float> {
+        let cameraLocal = anchor.transform.inverse * SIMD4<Float>(
+            camera.x, camera.y, camera.z, 1
         )
-        return DetectedSurface(
-            id: surface.planeID,
-            position: surface.position,
-            normal: surface.normal
-        )
+
+        let halfWidth = anchor.planeExtent.width * 0.5
+        let halfHeight = anchor.planeExtent.height * 0.5
+        let clampedX = min(max(cameraLocal.x, anchor.center.x - halfWidth), anchor.center.x + halfWidth)
+        let clampedZ = min(max(cameraLocal.z, anchor.center.z - halfHeight), anchor.center.z + halfHeight)
+
+        let localPoint = SIMD4<Float>(clampedX, 0, clampedZ, 1)
+        let worldPoint = anchor.transform * localPoint
+        return SIMD3<Float>(worldPoint.x, worldPoint.y, worldPoint.z)
+    }
+
+    private func planeNormal(_ anchor: ARPlaneAnchor) -> SIMD3<Float> {
+        simd_normalize(SIMD3<Float>(
+            anchor.transform.columns.1.x,
+            anchor.transform.columns.1.y,
+            anchor.transform.columns.1.z
+        ))
+    }
+
+    private func ensureNormalPointsAwayFromCamera(
+        _ normal: SIMD3<Float>,
+        surface: SIMD3<Float>,
+        camera: SIMD3<Float>
+    ) -> SIMD3<Float> {
+        let toCamera = camera - surface
+        return simd_dot(normal, toCamera) > 0 ? normal : -normal
     }
 
 

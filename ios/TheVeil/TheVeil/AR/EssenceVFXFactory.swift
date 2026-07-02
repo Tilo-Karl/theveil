@@ -189,6 +189,7 @@ final class EssenceVFX {
         tendrilLevel: Float,
         basePosition: SIMD3<Float>,
         baseOrientation: simd_quatf,
+        movementVelocity: SIMD3<Float>,
         overloadFlash: Float
     ) {
         core.position = basePosition
@@ -240,8 +241,20 @@ final class EssenceVFX {
             angle: sin(time * 0.23 + phase * 1.6) * 0.24,
             axis: simd_normalize(SIMD3<Float>(0.22, 0.83, 0.51))
         )
-        ribbon.entity.orientation = baseOrientation * wispSway
-        ribbon.update(at: time + phase, reveal: tendrilLevel)
+        let ribbonOrientation = baseOrientation * wispSway
+        ribbon.entity.orientation = ribbonOrientation
+        let localVelocity = ribbonOrientation.inverse.act(movementVelocity)
+        let movementSpeed = simd_length(localVelocity)
+        let trailDirection = movementSpeed > 0.008
+            ? -localVelocity / movementSpeed
+            : SIMD3<Float>(0, -1, 0)
+        let trailStrength = 0.2 + min(movementSpeed / 0.5, 1) * 0.8
+        ribbon.update(
+            at: time + phase,
+            reveal: tendrilLevel,
+            trailDirection: trailDirection,
+            trailStrength: trailStrength
+        )
     }
 }
 
