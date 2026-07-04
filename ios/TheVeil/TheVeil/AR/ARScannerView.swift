@@ -398,42 +398,8 @@ extension ARScannerView {
             )
         }
 
-        private func updatePostProcessEffects(in arView: ARView) {
-            let cameraPosition = arView.cameraTransform.translation
-            let bounds = arView.bounds
-            guard bounds.width > 0, bounds.height > 0 else {
-                cameraPostProcessor.updateEssenceEffects([])
-                return
-            }
-
-            let effects = viewModel.visibleEssences.compactMap { essence -> SIMD4<Float>? in
-                guard
-                    essenceRenderer.manifestationLevel(for: essence.id) > 0,
-                    let worldPosition = essenceRenderer.worldPosition(for: essence.id),
-                    let screenPosition = arView.project(worldPosition),
-                    screenPosition.x >= -bounds.width * 0.25,
-                    screenPosition.x <= bounds.width * 1.25,
-                    screenPosition.y >= -bounds.height * 0.25,
-                    screenPosition.y <= bounds.height * 1.25
-                else {
-                    return nil
-                }
-
-                let distance = max(0.35, simd_distance(cameraPosition, worldPosition))
-                let effectRadius = min(max(0.09 / distance, 0.035), 0.13)
-                let manifestationLevel = essenceRenderer.manifestationLevel(for: essence.id)
-                let intensity = min(max(1.14 - distance * 0.11, 0.65), 1)
-                    * manifestationLevel
-
-                return SIMD4<Float>(
-                    Float(screenPosition.x / bounds.width),
-                    Float(screenPosition.y / bounds.height),
-                    effectRadius,
-                    intensity
-                )
-            }
-
-            cameraPostProcessor.updateEssenceEffects(effects)
+        private func updatePostProcessEffects(in _: ARView) {
+            cameraPostProcessor.updateEssenceEffects([])
         }
 
         private func aimedScreenDistance(
