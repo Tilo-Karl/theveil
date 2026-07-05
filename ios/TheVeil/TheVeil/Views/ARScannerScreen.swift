@@ -4,6 +4,7 @@ struct ARScannerScreen: View {
     @StateObject private var viewModel = ARScannerViewModel()
     @StateObject private var audioController = ScannerAudioController()
     @State private var isDeviceMenuPresented = false
+    @State private var isCapacitorActionsPresented = false
 
     var body: some View {
         ZStack {
@@ -13,6 +14,8 @@ struct ARScannerScreen: View {
             if viewModel.isScannerActive {
                 ScannerReticle(
                     progress: viewModel.lockOnProgress,
+                    beamProgress: viewModel.resonanceBeamProgress,
+                    beamActive: viewModel.resonanceBeamActive,
                     signalMode: viewModel.signalMode,
                     gameplayPhase: viewModel.gameplayPhase
                 )
@@ -24,29 +27,53 @@ struct ARScannerScreen: View {
                 viewModel: viewModel,
                 scannerStateStore: viewModel.scannerStateStore,
                 inventoryStore: viewModel.inventoryStore,
-                visibleEssenceStore: viewModel.visibleEssenceStore
+                encounterStore: viewModel.encounterStore,
+                capacitorAction: {
+                    guard viewModel.canOperateCapacitor else { return }
+                    isCapacitorActionsPresented.toggle()
+                },
+                containmentCellAction: {
+                    isCapacitorActionsPresented = false
+                    viewModel.activateContainmentCell()
+                }
             )
             .opacity(viewModel.startupPhase == .booting ? 0 : Double(viewModel.lensIntensity))
-            .allowsHitTesting(false)
 
             if let notice = viewModel.scannerNotice {
-                ScannerNoticeOverlay(
-                    notice: notice,
-                    containedCount: viewModel.noticeContainedCount,
-                    requiredCount: viewModel.noticeRequiredCount
-                )
+                ScannerNoticeOverlay(notice: notice)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(.top, 170)
                 .allowsHitTesting(false)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
-            if viewModel.gameplayPhase == .charged {
+            if isCapacitorActionsPresented, viewModel.canOperateCapacitor {
                 VStack {
                     Spacer()
-                    CapacitorChoiceControl(
-                        overloadAction: viewModel.activateOverload,
-                        craftAction: viewModel.craftContainmentCell
+                    CapacitorActionControl(
+                        dischargeCircuitStore: viewModel.dischargeCircuitStore,
+                        encounterStore: viewModel.encounterStore,
+                        capacitorCharge: viewModel.inventoryStore.capacitorEssenceCount,
+                        capacitorCapacity: viewModel.inventoryStore.equipment.capacitorCapacity,
+                        storageActionsEnabled: viewModel.canManageCapacitorStorage,
+                        uploadAction: {
+                            isCapacitorActionsPresented = false
+                            viewModel.uploadCapacitorEssence()
+                        },
+                        containAction: {
+                            isCapacitorActionsPresented = false
+                            viewModel.containCapacitorEssence()
+                        },
+                        dischargeAction: {
+                            let wasDischarging = viewModel.dischargeCircuitStore.isActive
+                            viewModel.dischargeCapacitorEssence()
+                            if wasDischarging {
+                                isCapacitorActionsPresented = false
+                            }
+                        },
+                        closeAction: {
+                            isCapacitorActionsPresented = false
+                        }
                     )
                     .padding(.bottom, 126)
                 }
@@ -70,39 +97,34 @@ struct ARScannerScreen: View {
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(.top, 116)
+                .padding(.top, 174)
                 .padding(.trailing, 20)
                 .accessibilityLabel("Open scanner device menu")
             }
 
-            #if DEBUG
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    DebugScannerControls(
-                        autoLock: Binding(
-                            get: { viewModel.debugAutoLockEnabled },
-                            set: { viewModel.setDebugAutoLockEnabled($0) }
-                        ),
-                        phaseCube: Binding(
-                            get: { viewModel.debugPhaseCubeEnabled },
-                            set: { viewModel.setDebugPhaseCubeEnabled($0) }
-                        ),
-                        traversalStatus: viewModel.debugTraversalStatus
-                    )
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 190)
-            }
-            #endif
-
             if
-                viewModel.gameplayPhase == .overloading,
-                let overloadStartedAt = viewModel.overloadStartedAt
+                viewModel.gameplayPhase == .discharging,
+                let dischargeStartedAt = viewModel.manifestationPulseStartedAt
             {
-                ScannerOverloadTransition(startedAt: overloadStartedAt)
+                ScannerDischargeTransition(startedAt: dischargeStartedAt)
                     .allowsHitTesting(false)
+            }
+
+            if let megaBeamStartedAt = viewModel.megaBeamStartedAt {
+                MegaResonanceBeamOverlay(
+                    startedAt: megaBeamStartedAt,
+                    currentCharge: viewModel.inventoryStore.capacitorEssenceCount,
+                    peakCharge: viewModel.megaBeamPeakCharge,
+                    capacitorCapacity: viewModel.inventoryStore.equipment.capacitorCapacity,
+                    intensity: viewModel.megaBeamIntensity
+                )
+                .allowsHitTesting(false)
+            }
+
+            if viewModel.resonanceBeamActive, viewModel.megaBeamStartedAt == nil {
+                ResonanceBeamOverlay(progress: viewModel.resonanceBeamProgress)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
 
             if !viewModel.isScannerActive {
@@ -112,6 +134,30 @@ struct ARScannerScreen: View {
                 )
                 .allowsHitTesting(false)
             }
+
+            #if DEBUG
+            if !isCapacitorActionsPresented {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        DebugScannerControls(
+                            autoLock: Binding(
+                                get: { viewModel.debugAutoLockEnabled },
+                                set: { viewModel.setDebugAutoLockEnabled($0) }
+                            ),
+                            phaseCube: Binding(
+                                get: { viewModel.debugPhaseCubeEnabled },
+                                set: { viewModel.setDebugPhaseCubeEnabled($0) }
+                            ),
+                            traversalStatus: viewModel.debugTraversalStatus
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 190)
+                }
+            }
+            #endif
         }
         .onAppear {
             audioController.startBootSequence()
@@ -124,14 +170,22 @@ struct ARScannerScreen: View {
                 audioController.playDetectionBeep()
             }
         }
-        .onChange(of: viewModel.containmentEventCounter) { _, eventCount in
+        .onChange(of: viewModel.resonanceBeamActive) { _, active in
+            audioController.setResonanceBeamActive(active)
+        }
+        .onChange(of: viewModel.essenceStorageEventCounter) { _, eventCount in
             if eventCount > 0 {
-                audioController.playContainmentChirp()
+                audioController.playEssenceStorageChirp()
             }
         }
-        .onChange(of: viewModel.overloadEventCounter) { _, eventCount in
+        .onChange(of: viewModel.manifestationPulseEventCounter) { _, eventCount in
             if eventCount > 0 {
-                audioController.playOverloadPulse()
+                audioController.playDischargePulse()
+            }
+        }
+        .onChange(of: viewModel.megaBeamEventCounter) { _, eventCount in
+            if eventCount > 0 {
+                audioController.playMegaResonanceBeam(intensity: viewModel.megaBeamIntensity)
             }
         }
         .onDisappear {
@@ -140,7 +194,7 @@ struct ARScannerScreen: View {
         .sheet(isPresented: $isDeviceMenuPresented) {
             ScannerDeviceMenuView(
                 inventoryStore: viewModel.inventoryStore,
-                hasIdentifiedWisp: viewModel.hasIdentifiedWisp
+                researchStore: viewModel.researchStore
             )
         }
     }
@@ -182,79 +236,7 @@ private struct DebugScannerControls: View {
 }
 #endif
 
-private struct CapacitorChoiceControl: View {
-    let overloadAction: () -> Void
-    let craftAction: () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Text("VEIL CAPACITOR FULL")
-                .font(.caption2.monospaced().weight(.semibold))
-                .foregroundStyle(.cyan)
-
-            HStack(spacing: 8) {
-                choiceButton(
-                    title: "OVERLOAD",
-                    subtitle: "DISTURB THE VEIL",
-                    systemImage: "bolt.trianglebadge.exclamationmark.fill",
-                    accent: Color(red: 0.72, green: 0.3, blue: 1),
-                    action: overloadAction
-                )
-
-                choiceButton(
-                    title: "CRAFT CELL",
-                    subtitle: "PERMANENT STORAGE",
-                    systemImage: "battery.100percent",
-                    accent: .cyan,
-                    action: craftAction
-                )
-            }
-        }
-        .padding(10)
-        .background(Color.black.opacity(0.78))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.cyan.opacity(0.38), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .padding(.horizontal, 20)
-    }
-
-    private func choiceButton(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        accent: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.body)
-                Text(title)
-                    .font(.caption.monospaced().weight(.bold))
-                Text(subtitle)
-                    .font(.system(size: 9, design: .monospaced))
-                    .opacity(0.7)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 66)
-            .background(accent.opacity(0.14))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(accent.opacity(0.9), lineWidth: 1.25)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-    }
-}
-
-private struct ScannerOverloadTransition: View {
+private struct ScannerDischargeTransition: View {
     let startedAt: Date
 
     var body: some View {
@@ -386,6 +368,8 @@ private struct CRTScanlines: View {
 
 private struct ScannerReticle: View {
     let progress: Double
+    let beamProgress: Double
+    let beamActive: Bool
     let signalMode: ScannerSignalMode
     let gameplayPhase: ScannerGameplayPhase
 
@@ -413,6 +397,16 @@ private struct ScannerReticle: View {
                 .opacity(progress > 0 ? 1 : 0)
 
             Circle()
+                .trim(from: 0, to: beamProgress)
+                .stroke(
+                    Color.white.opacity(0.95),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .frame(width: 60, height: 60)
+                .rotationEffect(.degrees(-90))
+                .opacity(beamActive || beamProgress > 0 ? 1 : 0)
+
+            Circle()
                 .fill(hasAnomaly ? activeColor : Color.white.opacity(0.8))
                 .frame(width: 4, height: 4)
 
@@ -427,6 +421,7 @@ private struct ScannerReticle: View {
         .shadow(color: activeColor.opacity(progress > 0 ? 0.8 : 0.2), radius: 8)
         .animation(.easeOut(duration: 0.16), value: signalMode)
         .animation(.easeOut(duration: 0.12), value: progress)
+        .animation(.easeOut(duration: 0.12), value: beamProgress)
     }
 
     private var hasAnomaly: Bool {
@@ -462,378 +457,6 @@ private struct ReticleCorners: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
 
         return path
-    }
-}
-
-private struct ScannerHUD: View {
-    @ObservedObject var viewModel: ARScannerViewModel
-    @ObservedObject var scannerStateStore: ARScannerStateStore
-    @ObservedObject var inventoryStore: EssenceInventoryStore
-    @ObservedObject var visibleEssenceStore: VisibleEssenceStore
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            Spacer()
-            footer
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
-    private var header: some View {
-        HStack(spacing: 14) {
-            ScannerGlyph()
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(AppStrings.scannerModeLabel)
-                    .font(.caption.monospaced().weight(.semibold))
-                    .foregroundStyle(.white)
-
-                HStack(spacing: 6) {
-                    Capsule()
-                        .fill(.cyan)
-                        .frame(width: 20, height: 2)
-                    Text(AppStrings.scannerStatusText(scannerStateStore.status).uppercased())
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.cyan.opacity(0.9))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(viewModel.counterLabel)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.65))
-
-                Text("\(viewModel.displayedContainedCount) / \(viewModel.displayedContainmentGoal)")
-                    .font(.headline.monospacedDigit().weight(.medium))
-                    .foregroundStyle(accentColor)
-
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.white.opacity(0.12))
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [.cyan, Color(red: 0.58, green: 0.28, blue: 1)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: geometry.size.width * collectionFraction)
-                    }
-                }
-                .frame(width: 86, height: 3)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color.black.opacity(0.52))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(accentColor.opacity(0.28), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            Image(systemName: scannerStateStore.status == .lostSoulManifested ? "scope" : "viewfinder")
-                .font(.body.weight(.light))
-                .foregroundStyle(.cyan)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(AppStrings.scannerSignalLabel)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.cyan.opacity(0.8))
-
-                SpectralResonanceMonitor(
-                    strength: viewModel.signalStrength,
-                    mode: viewModel.signalMode,
-                    lockProgress: viewModel.lockOnProgress,
-                    gameplayPhase: viewModel.gameplayPhase
-                )
-                .frame(height: 28)
-
-                Text(signalStatusText)
-                    .font(.caption2.monospaced().weight(.medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-            }
-
-            Spacer(minLength: 12)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(viewModel.fieldCounterLabel)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.55))
-                Text("\(visibleEssenceStore.visibleEssenceCount)")
-                    .font(.body.monospacedDigit().weight(.medium))
-                    .foregroundStyle(accentColor)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.black.opacity(0.48))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [.cyan.opacity(0), .cyan.opacity(0.7), .purple.opacity(0.55), .cyan.opacity(0)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    private var signalStatusText: String {
-        if let notice = viewModel.scannerNotice {
-            switch notice {
-            case .essenceContained:
-                return "ESSENCE STORED"
-            case .capacitorCharged:
-                return "VEIL CAPACITOR CHARGED"
-            case .containmentCellCrafted:
-                return "CONTAINMENT CELL CRAFTED"
-            case .overloading:
-                return "DISCHARGING VEIL CAPACITOR"
-            case .awakenedHunt:
-                return "AGITATED SIGNALS RELEASED"
-            case .synchronizing:
-                return "SYNCHRONIZING SAMPLE SET"
-            case .entityCatalogued:
-                return "WILL-O'-THE-WISP IDENTIFIED"
-            case .libraryUpdated:
-                return "VEILOLOGY UPDATED"
-            }
-        }
-
-        if scannerStateStore.status == .lostSoulManifested {
-            return viewModel.signalMode == .locking
-                ? "ENTITY SIGNAL LOCKED"
-                : "ENTITY RESONANCE DETECTED"
-        }
-
-        switch viewModel.gameplayPhase {
-        case .charged:
-            return "CAPACITOR CHOICE REQUIRED"
-        case .overloading:
-            return "SPECTRAL PRESSURE CRITICAL"
-        case .awakenedHunt:
-            if viewModel.signalMode == .locking {
-                return "AGITATED LOCK  \(Int(viewModel.lockOnProgress * 100))%"
-            }
-            return viewModel.signalMode == .anomalyDetected
-                ? "AGITATED WISP DETECTED"
-                : "SEARCHING FOR AGITATED WISPS"
-        case .calmSearch, .manifestation:
-            break
-        }
-
-        switch viewModel.signalMode {
-        case .passive:
-            return "PASSIVE SEARCH"
-        case .anomalyDetected:
-            return "ANOMALY DETECTED"
-        case .locking:
-            return "CONTAINMENT LOCK  \(Int(viewModel.lockOnProgress * 100))%"
-        }
-    }
-
-    private var collectionFraction: CGFloat {
-        let goal = viewModel.displayedContainmentGoal
-        guard goal > 0 else { return 1 }
-        return min(CGFloat(viewModel.displayedContainedCount) / CGFloat(goal), 1)
-    }
-
-    private var accentColor: Color {
-        switch viewModel.gameplayPhase {
-        case .overloading, .awakenedHunt, .manifestation:
-            return Color(red: 0.7, green: 0.32, blue: 1)
-        case .calmSearch, .charged:
-            return Color(red: 0.66, green: 0.48, blue: 1)
-        }
-    }
-}
-
-private struct SpectralResonanceMonitor: View {
-    let strength: Double
-    let mode: ScannerSignalMode
-    let lockProgress: Double
-    let gameplayPhase: ScannerGameplayPhase
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
-            Canvas { context, size in
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                let tick = Int(time * 18)
-                let sampleCount = 56
-                let regularity: Double
-
-                switch mode {
-                case .passive:
-                    regularity = 0.05
-                case .anomalyDetected:
-                    regularity = 0.28
-                case .locking:
-                    regularity = 0.35 + min(lockProgress, 1) * 0.65
-                }
-
-                let isAgitated = gameplayPhase == .overloading
-                    || gameplayPhase == .awakenedHunt
-                    || gameplayPhase == .manifestation
-
-                context.stroke(
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: size.height / 2))
-                        path.addLine(to: CGPoint(x: size.width, y: size.height / 2))
-                    },
-                    with: .color(.cyan.opacity(0.14)),
-                    lineWidth: 1
-                )
-
-                var waveform = Path()
-                for index in 0..<sampleCount {
-                    let progress = Double(index) / Double(sampleCount - 1)
-                    let x = size.width * progress
-                    let noise = hashNoise(index: index, tick: tick)
-                    let spike = noise > 0.88
-                        ? (noise - 0.88) * 7.5
-                        : 0
-                    let staticSignal = (noise * 2 - 1) + spike
-                    let frequency = isAgitated ? 13.0 : 8.0
-                    let speed = isAgitated ? 8.4 : 5.2
-                    let stableSignal = sin(progress * frequency * .pi - time * speed)
-                    let mixedSignal = staticSignal * (1 - regularity)
-                        + stableSignal * regularity
-                    let agitationBoost = isAgitated ? 2.5 : 0
-                    let amplitude = 2.5 + min(max(strength, 0), 1) * 10.5 + agitationBoost
-                    let y = size.height / 2 + mixedSignal * amplitude
-
-                    if index == 0 {
-                        waveform.move(to: CGPoint(x: x, y: y))
-                    } else {
-                        waveform.addLine(to: CGPoint(x: x, y: y))
-                    }
-                }
-
-                context.stroke(
-                    waveform,
-                    with: .color(
-                        isAgitated
-                            ? Color(red: 0.72, green: 0.3, blue: 1)
-                            : (mode == .passive ? .cyan.opacity(0.62) : .cyan)
-                    ),
-                    style: StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round)
-                )
-            }
-        }
-    }
-
-    private func hashNoise(index: Int, tick: Int) -> Double {
-        let value = sin(Double(index * 127 + tick * 311) * 12.9898) * 43_758.5453
-        return value - floor(value)
-    }
-}
-
-private struct ScannerNoticeOverlay: View {
-    let notice: ScannerNotice
-    let containedCount: Int
-    let requiredCount: Int
-
-    var body: some View {
-        VStack(spacing: 5) {
-            switch notice {
-            case .essenceContained:
-                Text("ESSENCE STORED")
-                    .foregroundStyle(.cyan)
-                Text("VEIL CAPACITOR  \(containedCount) / \(requiredCount)")
-                    .foregroundStyle(.white.opacity(0.8))
-
-            case .capacitorCharged:
-                Text("VEIL CAPACITOR CHARGED")
-                    .foregroundStyle(Color(red: 0.7, green: 0.34, blue: 1))
-                Text("OVERLOAD OR CRAFT")
-                    .foregroundStyle(.white.opacity(0.78))
-
-            case .containmentCellCrafted:
-                Text("CONTAINMENT CELL CRAFTED")
-                    .foregroundStyle(.cyan)
-                Text("PERMANENT STORAGE +1")
-                    .foregroundStyle(.white.opacity(0.78))
-
-            case .overloading:
-                Text("SPECTRAL OVERLOAD")
-                    .foregroundStyle(.white)
-                Text("DISCHARGING VEIL CAPACITOR")
-                    .foregroundStyle(Color(red: 0.72, green: 0.34, blue: 1))
-
-            case .awakenedHunt:
-                Text("WISPS AGITATED")
-                    .foregroundStyle(Color(red: 0.72, green: 0.34, blue: 1))
-                Text("CONTAIN 3 UNSTABLE SIGNALS")
-                    .foregroundStyle(.white.opacity(0.82))
-
-            case .synchronizing:
-                Text(requiredCount == 3 ? "AGITATED ESSENCE" : "ESSENCE REQUIRED")
-                    .foregroundStyle(.white.opacity(0.72))
-                Text("\(containedCount) / \(requiredCount)")
-                    .font(.title2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color(red: 0.66, green: 0.48, blue: 1))
-                Text("SYNCHRONIZING...")
-                    .foregroundStyle(.cyan)
-
-            case .entityCatalogued:
-                Text("WILL-O'-THE-WISP IDENTIFIED")
-                    .foregroundStyle(.cyan)
-
-            case .libraryUpdated:
-                Text("VEILOLOGY UPDATED")
-                    .foregroundStyle(Color(red: 0.66, green: 0.48, blue: 1))
-            }
-        }
-        .font(.caption.monospaced().weight(.semibold))
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 22)
-        .padding(.vertical, 12)
-        .background(Color.black.opacity(0.68))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.cyan.opacity(0.45), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .animation(.easeInOut(duration: 0.18), value: notice)
-    }
-}
-
-private struct ScannerGlyph: View {
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(.cyan.opacity(0.45), lineWidth: 1)
-            Circle()
-                .stroke(.cyan.opacity(0.85), lineWidth: 1)
-                .frame(width: 18, height: 18)
-            Circle()
-                .fill(.cyan)
-                .frame(width: 4, height: 4)
-            Rectangle()
-                .fill(.cyan.opacity(0.65))
-                .frame(width: 36, height: 1)
-            Rectangle()
-                .fill(.cyan.opacity(0.65))
-                .frame(width: 1, height: 36)
-        }
-        .frame(width: 36, height: 36)
-        .shadow(color: .cyan.opacity(0.45), radius: 5)
     }
 }
 

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ScannerDeviceMenuView: View {
     @ObservedObject var inventoryStore: EssenceInventoryStore
-    let hasIdentifiedWisp: Bool
+    @ObservedObject var researchStore: WispResearchStore
 
     @Environment(\.dismiss) private var dismiss
 
@@ -12,27 +12,30 @@ struct ScannerDeviceMenuView: View {
                 Section("STORAGE") {
                     storageRow(
                         title: "VEIL CAPACITOR",
-                        value: "\(inventoryStore.capacitorEssenceCount) / 5",
+                        value: AppStrings.capacitorCharge(
+                            inventoryStore.capacitorEssenceCount,
+                            capacity: inventoryStore.equipment.capacitorCapacity
+                        ),
                         systemImage: "bolt.horizontal.circle"
                     )
                     storageRow(
-                        title: "CONTAINMENT CELLS",
-                        value: "\(inventoryStore.containmentCellCount)",
+                        title: AppStrings.integratedCellLabel,
+                        value: integratedCellValue,
                         systemImage: "battery.100percent"
                     )
                 }
 
                 Section("RESEARCH") {
                     NavigationLink {
-                        BookOfVeilogyView(hasIdentifiedWisp: hasIdentifiedWisp)
+                        BookOfVeilogyView(hasIdentifiedWisp: researchStore.hasIdentifiedWisp)
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("BOOK OF VEILOGY")
                                     .font(.callout.monospaced().weight(.semibold))
-                                Text(hasIdentifiedWisp ? "WILL-O'-THE-WISP ENTRY UPDATED" : "FIELD RECORDS")
+                                Text(researchStatus)
                                     .font(.caption2.monospaced())
-                                    .foregroundStyle(hasIdentifiedWisp ? .cyan : .secondary)
+                                    .foregroundStyle(researchStore.hasIdentifiedWisp ? .cyan : .secondary)
                             }
                         } icon: {
                             Image(systemName: "book.closed")
@@ -55,6 +58,23 @@ struct ScannerDeviceMenuView: View {
             }
             .preferredColorScheme(.dark)
         }
+    }
+
+    private var integratedCellValue: String {
+        guard inventoryStore.isIntegratedCellUnlocked else {
+            return AppStrings.lockedStorageValue
+        }
+        return "\(inventoryStore.containmentCellEssenceCount) / \(inventoryStore.equipment.containmentCellCapacity)"
+    }
+
+    private var researchStatus: String {
+        if researchStore.hasIdentifiedWisp {
+            return "WILL-O'-THE-WISP ENTRY UPDATED"
+        }
+        return AppStrings.wispResearchProgress(
+            researchStore.uploadedSampleCount,
+            required: WispResearchStore.identificationThreshold
+        )
     }
 
     private func storageRow(title: String, value: String, systemImage: String) -> some View {

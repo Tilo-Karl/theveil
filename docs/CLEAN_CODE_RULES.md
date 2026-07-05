@@ -98,6 +98,17 @@ When generating code, the AI must:
 
 ⸻
 
+9. Fallbacks & Failure Integrity
+	•	A fallback must preserve the feature's stated contract.
+	•	A fallback must never fabricate missing data, invent a successful result, or make a failed operation appear successful.
+	•	When required inputs or preconditions are unavailable, return an explicit failure and let the caller handle it.
+	•	Degraded behavior is allowed only when it is honest, observable, and still contributes useful functionality.
+	•	Debug and prototype code must expose failures rather than conceal them.
+
+If failure is the truthful result, let it fail.
+
+⸻
+
 Enforcement Clause
 
 If any rule conflicts with speed, convenience, or brevity:
@@ -112,6 +123,7 @@ Summary (for AI)
 	•	Extract invariants on second use
 	•	Prefer structure over cleverness
 	•	Delete only after replacement
+	•	Never disguise failure with fabricated fallback behavior
 	•	Optimize for the end state
 
 _____

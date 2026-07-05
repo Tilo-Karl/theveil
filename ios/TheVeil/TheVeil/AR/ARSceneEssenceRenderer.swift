@@ -1,19 +1,17 @@
 import ARKit
-import CoreGraphics
 import RealityKit
 import UIKit
 
 @MainActor
 final class ARSceneEssenceRenderer {
-    private let lockCompletionGrace: CFTimeInterval = 0.12
     private let ambientMovementSpeed: Float = 0.16
     private var renderedEssences: [AmbientEssence.ID: RenderedEssence] = [:]
     private var atmosphereAnchor: AnchorEntity?
     private let vfxFactory = EssenceVFXFactory()
-    private let cyanParticleTexture = ParticleGlowTextureFactory.makeTexture(
+    private let cyanParticleTexture = SpectralParticleTextureFactory.makeTexture(
         color: UIColor(red: 0.3, green: 0.8, blue: 1, alpha: 1)
     )
-    private let violetParticleTexture = ParticleGlowTextureFactory.makeTexture(
+    private let violetParticleTexture = SpectralParticleTextureFactory.makeTexture(
         color: UIColor(red: 0.3, green: 0.42, blue: 1, alpha: 1)
     )
 
@@ -582,14 +580,18 @@ final class ARSceneEssenceRenderer {
     ) {
         if essence.isAwakened {
             let dartingDuration = rollOneD3()
-            let pauseDuration = rollTwoD3() + 0.5 + lockCompletionGrace
+            let pauseDuration = captureWindowDuration()
             essence.awakenedMotionPhase = .darting
             essence.awakenedMotionPhaseEndsAt = time + dartingDuration
             essence.visibleDuration = dartingDuration + pauseDuration
             essence.nextDartAt = time
         } else {
-            essence.visibleDuration = rollTwoD3() + 0.5 + lockCompletionGrace
+            essence.visibleDuration = captureWindowDuration()
         }
+    }
+
+    private func captureWindowDuration() -> CFTimeInterval {
+        rollTwoD3() + ResonanceTiming.minimumCaptureWindow - 2
     }
 
     private func motionPosition(
@@ -1104,59 +1106,4 @@ private struct EssenceManifestationPresentation {
         halo: 0,
         tendrils: 0
     )
-}
-
-private enum ParticleGlowTextureFactory {
-    static func makeTexture(color: UIColor) -> TextureResource? {
-        let size = 64
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: nil,
-            width: size,
-            height: size,
-            bitsPerComponent: 8,
-            bytesPerRow: size * 4,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return nil
-        }
-
-        let transparent = color.withAlphaComponent(0).cgColor
-        let colors = [color.cgColor, color.withAlphaComponent(0.5).cgColor, transparent] as CFArray
-        guard let gradient = CGGradient(
-            colorsSpace: colorSpace,
-            colors: colors,
-            locations: [0, 0.28, 1]
-        ) else {
-            return nil
-        }
-
-        let center = CGPoint(x: size / 2, y: size / 2)
-        context.drawRadialGradient(
-            gradient,
-            startCenter: center,
-            startRadius: 0,
-            endCenter: center,
-            endRadius: CGFloat(size) / 2,
-            options: [.drawsAfterEndLocation]
-        )
-
-        guard let image = context.makeImage() else {
-            return nil
-        }
-
-        return try? TextureResource(
-            image: image,
-            withName: "veil-particle-glow",
-            options: .init(semantic: .color)
-        )
-    }
-}
-
-private extension Transform {
-    var forwardVector: SIMD3<Float> {
-        -SIMD3<Float>(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z)
-    }
-
 }

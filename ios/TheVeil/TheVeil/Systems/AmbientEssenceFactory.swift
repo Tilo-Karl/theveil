@@ -15,6 +15,34 @@ struct AmbientEssenceFactory {
         ]
     }
 
+    func makeResupplyField(
+        cameraPosition: SIMD3<Float>,
+        cameraForward: SIMD3<Float>
+    ) -> [AmbientEssence] {
+        var forward = SIMD3<Float>(cameraForward.x, 0, cameraForward.z)
+        if simd_length_squared(forward) < 0.000_001 {
+            forward = SIMD3<Float>(0, 0, -1)
+        } else {
+            forward = simd_normalize(forward)
+        }
+        let right = simd_normalize(simd_cross(forward, SIMD3<Float>(0, 1, 0)))
+
+        return [
+            makeEssence(
+                position: cameraPosition + forward * 0.92 - right * 0.42
+                    + SIMD3<Float>(0, 0.08, 0)
+            ),
+            makeEssence(
+                position: cameraPosition + forward * 1.08 + right * 0.38
+                    + SIMD3<Float>(0, 0.24, 0)
+            ),
+            makeEssence(
+                position: cameraPosition + forward * 0.82 + right * 0.12
+                    + SIMD3<Float>(0, -0.28, 0)
+            )
+        ]
+    }
+
     private func makeEssence(position: SIMD3<Float>) -> AmbientEssence {
         AmbientEssence(
             id: UUID(),

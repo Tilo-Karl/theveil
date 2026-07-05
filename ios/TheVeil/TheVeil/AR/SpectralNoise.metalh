@@ -1,0 +1,45 @@
+#ifndef SpectralNoise_h
+#define SpectralNoise_h
+
+#include <metal_stdlib>
+using namespace metal;
+
+inline float spectralHash(float3 point) {
+    point = fract(point * 0.1031);
+    point += dot(point, point.yzx + 33.33);
+    return fract((point.x + point.y) * point.z);
+}
+
+inline float spectralNoise(float3 point) {
+    float3 cell = floor(point);
+    float3 local = fract(point);
+    local = local * local * (3.0 - 2.0 * local);
+
+    float n000 = spectralHash(cell + float3(0, 0, 0));
+    float n100 = spectralHash(cell + float3(1, 0, 0));
+    float n010 = spectralHash(cell + float3(0, 1, 0));
+    float n110 = spectralHash(cell + float3(1, 1, 0));
+    float n001 = spectralHash(cell + float3(0, 0, 1));
+    float n101 = spectralHash(cell + float3(1, 0, 1));
+    float n011 = spectralHash(cell + float3(0, 1, 1));
+    float n111 = spectralHash(cell + float3(1, 1, 1));
+
+    float x00 = mix(n000, n100, local.x);
+    float x10 = mix(n010, n110, local.x);
+    float x01 = mix(n001, n101, local.x);
+    float x11 = mix(n011, n111, local.x);
+    return mix(mix(x00, x10, local.y), mix(x01, x11, local.y), local.z);
+}
+
+inline float spectralFBM(float3 point) {
+    float value = 0.0;
+    float amplitude = 0.52;
+    for (int octave = 0; octave < 4; ++octave) {
+        value += spectralNoise(point) * amplitude;
+        point = point * 2.03 + float3(7.1, 3.7, 5.4);
+        amplitude *= 0.48;
+    }
+    return value;
+}
+
+#endif

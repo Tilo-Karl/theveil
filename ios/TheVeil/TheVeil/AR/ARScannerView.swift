@@ -31,19 +31,17 @@ extension ARScannerView {
         private let viewModel: ARScannerViewModel
         private let essenceRenderer = ARSceneEssenceRenderer()
         private let lostSoulRenderer = ARSceneLostSoulRenderer()
-        private let surfacePhaseRouteFactory = SurfacePhaseRouteFactory()
         private let cameraPostProcessor = VeilCameraPostProcessor()
         private let planeCache = PlaneDetectionCache()
         private weak var arView: ARView?
         private var displayLink: CADisplayLink?
-        private var lockedTargetID: UUID?
-        private var lockStartedAt: CFTimeInterval?
-        private var lostSoulManifestationReadyAt: CFTimeInterval?
+        private var resonanceLockTracker = ResonanceLockTracker()
+        private var lastResonanceUpdateAt: CFTimeInterval?
         private let haptic = UIImpactFeedbackGenerator(style: .light)
         private let overloadHaptic = UIImpactFeedbackGenerator(style: .heavy)
         private var hasRenderedEssenceField = false
         private var renderedEssenceFieldRevision = -1
-        private var handledOverloadEventCount = 0
+        private var handledManifestationPulseEventCount = 0
         #if DEBUG
         private var debugForcedTargetID: AmbientEssence.ID?
         private let traversalDebugRenderer = ARSurfaceTraversalDebugRenderer()
@@ -51,8 +49,6 @@ extension ARScannerView {
 
         private let essenceCollectionDistance: Float = 1
         private let lostSoulTrackingDistance: Float = 3
-        private let essenceContainmentDuration: CFTimeInterval = 2.5
-        private let lostSoulLockDuration: CFTimeInterval = 1
         private let lockOnScreenRadius: CGFloat = 56
 
         init(viewModel: ARScannerViewModel) {
@@ -93,6 +89,8 @@ extension ARScannerView {
         func stop() {
             displayLink?.invalidate()
             displayLink = nil
+            resonanceLockTracker.reset()
+            lastResonanceUpdateAt = nil
             if let arView {
                 #if DEBUG
                 traversalDebugRenderer.remove(from: arView)
@@ -113,7 +111,7 @@ extension ARScannerView {
 
             guard
                 let essenceID = essenceRenderer.essenceID(for: tappedEntity),
-                viewModel.canContainEssence,
+                viewModel.canExtractEssence,
                 essenceRenderer.isCapturable(id: essenceID)
             else {
                 return
@@ -121,9 +119,8 @@ extension ARScannerView {
 
             if viewModel.debugAutoLockEnabled {
                 debugForcedTargetID = essenceID
-                lockedTargetID = essenceID
-                lockStartedAt = CACurrentMediaTime()
-                viewModel.updateLockOn(targetID: essenceID, progress: 0)
+                let update = resonanceLockTracker.forceLock(targetID: essenceID)
+                viewModel.updateResonanceLock(update.state)
                 return
             }
 
@@ -134,7 +131,8 @@ extension ARScannerView {
                 return
             }
 
-            collectEssence(id: essenceID, in: arView)
+            let update = resonanceLockTracker.forceLock(targetID: essenceID)
+            viewModel.updateResonanceLock(update.state)
         }
         #endif
 
@@ -154,6 +152,10 @@ extension ARScannerView {
 
             viewModel.updateScannerStartup(at: displayLink.timestamp)
             cameraPostProcessor.setLensIntensity(viewModel.lensIntensity)
+            viewModel.updateScannerPose(
+                position: arView.cameraTransform.translation,
+                forward: arView.cameraTransform.forwardVector
+            )
 
             let rawPlaneAnchors = arView.session.currentFrame?.anchors.compactMap { anchor in
                 anchor as? ARPlaneAnchor
@@ -180,8 +182,8 @@ extension ARScannerView {
             #endif
 
             if hasRenderedEssenceField {
-                if viewModel.overloadEventCounter > handledOverloadEventCount {
-                    handledOverloadEventCount = viewModel.overloadEventCounter
+                if viewModel.manifestationPulseEventCounter > handledManifestationPulseEventCount {
+                    handledManifestationPulseEventCount = viewModel.manifestationPulseEventCounter
                     clearVacuumLock()
                     essenceRenderer.beginAwakening(at: displayLink.timestamp)
                     overloadHaptic.impactOccurred(intensity: 1)
@@ -202,6 +204,13 @@ extension ARScannerView {
             manifestLostSoulIfNeeded(in: arView)
             updatePostProcessEffects(in: arView)
 
+            let previousResonanceUpdateAt = lastResonanceUpdateAt ?? displayLink.timestamp
+            let resonanceDelta = min(
+                max(displayLink.timestamp - previousResonanceUpdateAt, 0),
+                0.1
+            )
+            lastResonanceUpdateAt = displayLink.timestamp
+
             guard viewModel.isScannerActive else {
                 clearVacuumLock()
                 viewModel.updateSpectralSignal(
@@ -214,52 +223,45 @@ extension ARScannerView {
 
             let signalSample = scannerSignalSample(in: arView)
             guard let target = bestScannerTarget(in: arView) else {
-                clearVacuumLock()
+                let update = resonanceLockTracker.update(
+                    contactTargetID: nil,
+                    deltaTime: resonanceDelta,
+                    lockDuration: ResonanceTiming.lockDuration
+                )
+                viewModel.updateResonanceLock(update.state)
                 viewModel.updateSpectralSignal(
                     strength: signalSample.strength,
                     anomalyDetected: signalSample.anomalyDetected,
-                    lockProgress: nil
+                    lockProgress: update.state.targetID == nil
+                        ? nil
+                        : update.state.lockProgress
                 )
                 return
             }
 
-            if lockedTargetID != target.id {
-                lockedTargetID = target.id
-                lockStartedAt = displayLink.timestamp
-                viewModel.updateLockOn(targetID: target.id, progress: 0)
-                viewModel.updateSpectralSignal(
-                    strength: max(signalSample.strength, 0.62),
-                    anomalyDetected: true,
-                    lockProgress: 0
-                )
-                return
-            }
-
-            let elapsed = displayLink.timestamp - (lockStartedAt ?? displayLink.timestamp)
-            let lockDuration: CFTimeInterval
-            switch target {
-            case .essence:
-                lockDuration = essenceContainmentDuration
-            case .lostSoul:
-                lockDuration = lostSoulLockDuration
-            }
-            let progress = elapsed / lockDuration
-            viewModel.updateLockOn(targetID: target.id, progress: progress)
+            let update = resonanceLockTracker.update(
+                contactTargetID: target.id,
+                deltaTime: resonanceDelta,
+                lockDuration: ResonanceTiming.lockDuration
+            )
+            viewModel.updateResonanceLock(update.state)
             viewModel.updateSpectralSignal(
-                strength: max(signalSample.strength, 0.62 + min(progress, 1) * 0.38),
+                strength: max(
+                    signalSample.strength,
+                    0.62 + update.state.lockProgress * 0.28
+                        + update.state.beamProgress * 0.1
+                ),
                 anomalyDetected: true,
-                lockProgress: progress
+                lockProgress: update.state.lockProgress
             )
 
-            guard progress >= 1 else {
-                return
+            if update.didAcquireLock {
+                haptic.impactOccurred(intensity: 0.7)
+                haptic.prepare()
             }
 
-            switch target {
-            case .essence(let id, _):
+            if update.didCompleteBeam, case .essence(let id, _) = target {
                 collectEssence(id: id, in: arView)
-            case .lostSoul(_, let worldPosition):
-                beginLostSoulPhase(from: worldPosition, in: arView)
             }
         }
 
@@ -308,7 +310,7 @@ extension ARScannerView {
             }
             #endif
 
-            if viewModel.canContainEssence && !viewModel.visibleEssences.isEmpty {
+            if viewModel.canExtractEssence && !viewModel.visibleEssences.isEmpty {
                 return viewModel.visibleEssences
                     .compactMap { essence -> (target: ScannerTarget, screenDistance: CGFloat)? in
                         guard
@@ -423,36 +425,7 @@ extension ARScannerView {
                 return
             }
 
-            if let readyAt = lostSoulManifestationReadyAt {
-                guard CACurrentMediaTime() >= readyAt else {
-                    return
-                }
-
-                lostSoulManifestationReadyAt = nil
-            }
-
             lostSoulRenderer.render(lostSoul, in: arView)
-        }
-
-        private func beginLostSoulPhase(from worldPosition: SIMD3<Float>, in arView: ARView) {
-            let stablePlanes = planeCache.stablePlanes(at: CACurrentMediaTime())
-
-            guard let route = surfacePhaseRouteFactory.makeRoute(
-                from: stablePlanes,
-                targetPosition: worldPosition,
-                cameraPosition: arView.cameraTransform.translation,
-                selection: .classifiedWalls
-            ) else {
-                clearVacuumLock()
-                return
-            }
-
-            clearVacuumLock()
-            lostSoulRenderer.noticeAndEscape(
-                along: route,
-                cameraPosition: arView.cameraTransform.translation,
-                at: CACurrentMediaTime()
-            )
         }
 
         private func collectEssence(id: AmbientEssence.ID, in arView: ARView) {
@@ -465,15 +438,10 @@ extension ARScannerView {
 
             haptic.impactOccurred()
             haptic.prepare()
-            lockedTargetID = nil
-            lockStartedAt = nil
+            resonanceLockTracker.reset()
             #if DEBUG
             debugForcedTargetID = nil
             #endif
-
-            if viewModel.gameplayPhase == .manifestation {
-                lostSoulManifestationReadyAt = CACurrentMediaTime() + 4.8
-            }
 
             essenceRenderer.collectEssence(id: id, from: arView)
         }
@@ -486,12 +454,11 @@ extension ARScannerView {
             let hadDebugTarget = false
             #endif
 
-            guard lockedTargetID != nil || lockStartedAt != nil || hadDebugTarget else {
+            guard resonanceLockTracker.state != .idle || hadDebugTarget else {
                 return
             }
 
-            lockedTargetID = nil
-            lockStartedAt = nil
+            resonanceLockTracker.reset()
             viewModel.clearLockOn()
         }
     }

@@ -6,15 +6,18 @@ final class ScannerAudioController: ObservableObject {
     private let engine = AVAudioEngine()
     private let humNode = AVAudioPlayerNode()
     private let scannerNoiseNode = AVAudioPlayerNode()
+    private let resonanceBeamNode = AVAudioPlayerNode()
     private let effectNode = AVAudioPlayerNode()
     private let humBuffer: AVAudioPCMBuffer
     private let scannerNoiseBuffer: AVAudioPCMBuffer
+    private let resonanceBeamBuffer: AVAudioPCMBuffer
     private let detectionBeepBuffer: AVAudioPCMBuffer
-    private let containmentChirpBuffer: AVAudioPCMBuffer
-    private let overloadPulseBuffer: AVAudioPCMBuffer
+    private let essenceStorageChirpBuffer: AVAudioPCMBuffer
+    private let dischargePulseBuffer: AVAudioPCMBuffer
 
     private var humScheduled = false
     private var scannerNoiseScheduled = false
+    private var resonanceBeamScheduled = false
 
     init() {
         let format = AVAudioFormat(
@@ -23,19 +26,23 @@ final class ScannerAudioController: ObservableObject {
         )!
         humBuffer = Self.makeHumBuffer(format: format)
         scannerNoiseBuffer = Self.makeScannerNoiseBuffer(format: format)
+        resonanceBeamBuffer = Self.makeResonanceBeamBuffer(format: format)
         detectionBeepBuffer = Self.makeDetectionBeepBuffer(format: format)
-        containmentChirpBuffer = Self.makeContainmentChirpBuffer(format: format)
-        overloadPulseBuffer = Self.makeOverloadPulseBuffer(format: format)
+        essenceStorageChirpBuffer = Self.makeEssenceStorageChirpBuffer(format: format)
+        dischargePulseBuffer = Self.makeDischargePulseBuffer(format: format)
 
         engine.attach(humNode)
         engine.attach(scannerNoiseNode)
+        engine.attach(resonanceBeamNode)
         engine.attach(effectNode)
         engine.connect(humNode, to: engine.mainMixerNode, format: format)
         engine.connect(scannerNoiseNode, to: engine.mainMixerNode, format: format)
+        engine.connect(resonanceBeamNode, to: engine.mainMixerNode, format: format)
         engine.connect(effectNode, to: engine.mainMixerNode, format: format)
 
         humNode.volume = 0.52
         scannerNoiseNode.volume = 0.34
+        resonanceBeamNode.volume = 0.28
         effectNode.volume = 0.72
     }
 
@@ -73,21 +80,53 @@ final class ScannerAudioController: ObservableObject {
         playEffect(detectionBeepBuffer)
     }
 
-    func playContainmentChirp() {
-        playEffect(containmentChirpBuffer)
+    func setResonanceBeamActive(_ active: Bool) {
+        if active {
+            if !engine.isRunning {
+                try? engine.start()
+            }
+            if !resonanceBeamScheduled {
+                resonanceBeamNode.scheduleBuffer(
+                    resonanceBeamBuffer,
+                    at: nil,
+                    options: .loops
+                )
+                resonanceBeamScheduled = true
+            }
+            if !resonanceBeamNode.isPlaying {
+                resonanceBeamNode.play()
+            }
+        } else {
+            resonanceBeamNode.stop()
+            resonanceBeamScheduled = false
+        }
     }
 
-    func playOverloadPulse() {
-        playEffect(overloadPulseBuffer)
+    func playEssenceStorageChirp() {
+        playEffect(essenceStorageChirpBuffer)
+    }
+
+    func playDischargePulse() {
+        playEffect(dischargePulseBuffer)
+    }
+
+    func playMegaResonanceBeam(intensity: Double) {
+        let strength = min(max(intensity, 0), 1)
+        playEffect(
+            dischargePulseBuffer,
+            volume: Float(0.78 + strength * 0.2)
+        )
     }
 
     func stop() {
         humNode.stop()
         scannerNoiseNode.stop()
+        resonanceBeamNode.stop()
         effectNode.stop()
         engine.stop()
         humScheduled = false
         scannerNoiseScheduled = false
+        resonanceBeamScheduled = false
         try? AVAudioSession.sharedInstance().setActive(
             false,
             options: .notifyOthersOnDeactivation
@@ -100,11 +139,15 @@ final class ScannerAudioController: ObservableObject {
         try? session.setActive(true)
     }
 
-    private func playEffect(_ buffer: AVAudioPCMBuffer) {
+    private func playEffect(
+        _ buffer: AVAudioPCMBuffer,
+        volume: Float = 0.72
+    ) {
         if !engine.isRunning {
             try? engine.start()
         }
         effectNode.stop()
+        effectNode.volume = volume
         effectNode.scheduleBuffer(buffer)
         effectNode.play()
     }
@@ -168,7 +211,29 @@ final class ScannerAudioController: ObservableObject {
         return buffer
     }
 
-    private static func makeContainmentChirpBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
+    private static func makeResonanceBeamBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
+        let frameCount = AVAudioFrameCount(format.sampleRate * 0.6)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        buffer.frameLength = frameCount
+
+        let samples = buffer.floatChannelData![0]
+        var seed: UInt32 = 0x51A7_0B1E
+        for index in 0..<Int(frameCount) {
+            let time = Float(index) / Float(format.sampleRate)
+            let pulse = 0.78 + sin(2 * .pi * 7.5 * time) * 0.22
+            seed = 1_664_525 &* seed &+ 1_013_904_223
+            let noise = Float(seed & 0x00FF_FFFF) / Float(0x00FF_FFFF) * 2 - 1
+            samples[index] = (
+                sin(2 * .pi * 238 * time) * 0.055
+                    + sin(2 * .pi * 476 * time) * 0.022
+                    + noise * 0.007
+            ) * pulse
+        }
+
+        return buffer
+    }
+
+    private static func makeEssenceStorageChirpBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
         let duration: Float = 0.34
         let frameCount = AVAudioFrameCount(format.sampleRate * Double(duration))
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
@@ -188,7 +253,7 @@ final class ScannerAudioController: ObservableObject {
         return buffer
     }
 
-    private static func makeOverloadPulseBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
+    private static func makeDischargePulseBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer {
         let duration: Float = 1.15
         let frameCount = AVAudioFrameCount(format.sampleRate * Double(duration))
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
@@ -215,4 +280,5 @@ final class ScannerAudioController: ObservableObject {
 
         return buffer
     }
+
 }

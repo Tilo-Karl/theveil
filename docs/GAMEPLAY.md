@@ -2,102 +2,699 @@
 
 The Veil is a location-based augmented reality paranormal investigation game.
 
-Players investigate supernatural activity by collecting ambient spirit essence, weakening the Veil between worlds, identifying ghost entities, and helping them cross into the afterlife—or forcing them through.
+The player is a Veil Society field researcher. They investigate supernatural phenomena, gather scientific evidence, expand the Society's understanding of the Veil, and unlock improved scanner firmware, calibration, and equipment through research.
 
-Unlike traditional AR games, every investigation changes the persistent world by leaking spiritual essence back into reality. Over time, repeated investigations naturally create paranormal hotspots, major hauntings, and eventually Hellmouths.
+The player does not gain conventional character levels. Progress comes from knowledge, equipment, stored resources, and the collective advancement of the Veil Society.
+
+The scientific and supernatural terminology in this document follows [BOOK_OF_VEILOGY.md](BOOK_OF_VEILOGY.md).
 
 ## Vision
 
 A persistent supernatural world built from millions of player investigations.
 
+Every investigation weakens the local Veil. Repeated activity may eventually create paranormal hotspots, major hauntings, and Hellmouths.
+
 ## Current Target
 
-Native iOS prototype using SwiftUI, ARKit and RealityKit.
+Native iOS prototype using SwiftUI, ARKit, RealityKit, Metal, and procedural audio.
 
-Android support will follow once the gameplay loop is proven fun.
+The immediate focus is proving the complete single-player investigation loop. Cooperative multiplayer is required for the Version 1 release and must influence the architecture, but networking is not the current implementation milestone.
 
-## MVP Goal
+## MVP Question
 
-Answer one question:
+**Is investigating ghosts with the Veil Scanner fun?**
 
-Is investigating ghosts fun?
+# Core Philosophy
 
-# Gameplay
+Everything revolves around **Veil Essence**.
 
-## Core Investigation Loop
+Veil Essence is simultaneously:
 
-1. Open app
-2. AR scanner starts automatically
-3. Collect ambient spirit essence
-4. Release essence to weaken the Veil
-5. Ghost manifests
-6. Identify ghost through observation
-7. Feed preferred essence
-8. Ghost communicates how it wishes to be resolved
-9. Open the Veil
-10. Ghost crosses over (or is forced through)
-11. Collect residual ghost essence
+- Scientific evidence.
+- Temporary scanner energy.
+- Persistently stored energy.
+- A manifestation catalyst.
+- A resonance amplifier.
+- Research material.
 
----
+The same resource always obeys the same rules. Essence is transferred, uploaded, discharged, or consumed. A failed action must not secretly preserve it or fabricate a replacement.
 
-## MVP Ghosts
+`Ambient Veil Essence` and `Ghost Essence` describe provenance, not incompatible currencies. Both are Veil Essence and occupy the same Capacitor. Provenance and spectral-signature metadata remain attached to a sample so Upload can interpret it correctly.
 
-### Lost Spirit
+# Phenomena
 
-Behavior
+## Veil Essence
 
-- Flees initially
-- Requires repeated lock-on
-- Calms when fed preferred essence
-- Indicates where to open the Veil
-- Wishes to cross over peacefully
+- Veil Essence is spectral energy associated with the boundary between worlds.
+- Veil Essence possesses no known consciousness.
+- A Will-o'-the-Wisp is a naturally concentrated Veil Essence phenomenon with limited autonomous behaviour.
+- A Will-o'-the-Wisp is not a ghost and contains no soul.
+- Ghosts are surviving human souls and are categorically different from wisps.
+- `Will-o'-the-Wisp` is the folkloric designation for an autonomous concentration of Veil Essence, not its scientific classification.
 
-Reward
+The scanner initially reports unclassified phenomena as:
 
-Lost Spirit Essence
+```text
+ANOMALY DETECTED
+```
 
----
+After sufficient uploaded research, it may permanently identify the phenomenon:
 
-### Poltergeist
+```text
+IDENTIFIED
+VEIL ESSENCE
+FOLKLORIC DESIGNATION
+WILL-O'-THE-WISP
+VEILOLOGY UPDATED
+```
 
-Behavior
+Known phenomena should be recognised immediately in later investigations.
 
-- Aggressive
-- Requires more essence
-- Attempts to prevent opening the Veil
-- Throws virtual haunted objects attached to detected AR surfaces
-- Must be forced through
+## Ghosts
 
-Reward
+Ghosts are initially reported as:
 
-Poltergeist Essence
+```text
+UNKNOWN ENTITY
+```
 
----
+They can be affected through Resonance, but they are classified through analysis of Ghost Essence released after a successful encounter. Ghost Essence is Veil Essence carrying the originating soul's spectral signature.
 
-## Long-Term Progression
+# Version 1 Investigation Loop
 
-Ambient Essence
+1. Boot the Veil Scanner.
+2. Engage the Spectral Lens.
+3. Detect an unknown anomaly.
+4. Aim and establish **Resonance Lock**.
+5. At full lock, the scanner automatically projects a Resonance Beam.
+6. Maintain lock for a further two seconds while the beam destabilizes the wisp and extracts one Veil Essence into the Veil Capacitor.
+7. Tap the Capacitor and choose **UPLOAD**, **CONTAIN**, or **DISCHARGE**.
+8. Upload consumes the Capacitor contents and advances research.
+9. Contain transfers as much identified Essence as possible into the integrated Containment Cell.
+10. Tap Discharge to open the Capacitor circuit. One Essence powers two seconds and the next Essence is consumed automatically until the player taps again or the Capacitor empties.
+11. Without an active Manifestation, the Resonance energy charges the shared local field. Five Essence-equivalent units and ten powered seconds summon the initial entity.
+12. Nearby wisps become agitated as a side effect of the growing Manifestation field. Extracting up to three is an optional ammunition opportunity, not the cause of the Manifestation.
+13. The Ghost Manifestation begins when the shared field reaches its required charge, regardless of how many Agitated Wisps were extracted.
+14. Establish Resonance Lock on the ghost. The Resonance Beam engages automatically, but combined beam Intensity must meet the entity's Threshold before powered Discharge can build Target Resonance.
+15. While sufficiently powered and locked, each two-second Essence packet adds Target Resonance toward the entity's Stability requirement. While unlocked or below Threshold, the same packet continues burning and is wasted.
+16. A prepared researcher may tap the always-visible Containment Cell control to refill the Capacitor.
+17. Once the Capacitor is full, tapping the Cell again injects its remaining charge above normal capacity. Capacitor Overload automatically amplifies the same Resonance Beam.
+18. When Target Resonance reaches the entity's Stability, the scanner reports that the entity has destabilized and dissipated.
+19. Ghost Essence separates from the dissolving Manifestation as small wisps, spirals into the scanner, and enters the Capacitor as Veil Essence carrying the ghost's spectral signature.
+20. Upload the Ghost Essence to advance entity research and expand Veilogy.
 
-↓
+The Society's early interpretation is incomplete. Researchers initially believe that making a ghost disappear is a successful resolution. Later research will reveal that some ghosts, including Lost Souls, should instead be helped through a Rift in the Veil. This discovery belongs to a later gameplay phase and should not be prematurely exposed by the Version 1 scanner.
 
-Manifestation
+# Resonance System
 
-↓
+## Resonance Lock
 
-Ghost
+Resonance Lock is the scanner synchronizing with a phenomenon's spectral frequency.
 
-↓
+- The player aims with the central reticle.
+- Signal strength responds to proximity and aim.
+- Lock progress builds while alignment is maintained.
+- Lock progress decays rather than instantly resetting when alignment is briefly lost.
+- At 100%, the Resonance Beam engages automatically.
+- Maintaining the beam still requires maintaining Resonance Lock.
 
-Residual Essence
+`CONTAINMENT LOCK` is not valid terminology. Containment refers only to transferring Essence into a Containment Cell.
 
-↓
+## Resonance Beam
 
-Hotspot
+The Resonance Beam starts automatically after full Resonance Lock. There is no fire button. Discharge powers and amplifies that same beam; it does not create a separately named weapon.
 
-↓
+Against wisps it:
 
-Major Haunting
+- Provides one free Level 1 Resonance unit over two seconds.
+- Requires lock to remain aligned for the complete two-second channel.
+- Destabilizes the energy phenomenon and extracts Veil Essence into the Capacitor.
 
-↓
+Against ghosts it:
 
-Hellmouth
+- Attempts to establish Resonance coupling.
+- Accepts timed Resonance power from Discharge.
+- Builds Target Resonance only while powered, locked, and at or above the entity's Threshold.
+- Applies an additional entity effect that remains to be designed. Phase anchoring is a candidate, but is not yet established gameplay.
+
+When contact is lost:
+
+- The active Essence packet continues burning.
+- Target Resonance receives no progress while unlocked.
+- Target Resonance pauses briefly and then slowly decays.
+- Reacquiring Resonance Lock reconnects whatever powered time remains.
+
+When combined Intensity is below Threshold:
+
+- The beam cannot couple with the entity.
+- Target Resonance does not increase.
+- No research data or evidence is collected.
+- Discharged Essence is still consumed and wasted.
+- The scanner may report `INSUFFICIENT RESONANCE INTENSITY` as equipment feedback only.
+
+## Entity Resonance Profile
+
+Every entity is defined by two shared combat values:
+
+- **Threshold:** the minimum combined beam Intensity required to affect it.
+- **Stability:** the total Target Resonance that must accumulate before the entity destabilizes.
+
+Initial design examples:
+
+| Entity | Threshold | Stability |
+| --- | ---: | ---: |
+| Will-o'-the-Wisp | 1 | 1 |
+| Lost Soul | 1 | 5 |
+| Revenant | 2 | 12 |
+| Wraith | 3 | 20 |
+
+Beam output:
+
+- Normal Mk I output has Intensity `1`, consumes one Essence per two seconds, and adds one Target Resonance per two seconds.
+- Mk I Capacitor Overload has Intensity `2`, consumes one Essence per second, and adds one Target Resonance per second.
+- At Intensity `I`, one Essence packet lasts `2 / I` seconds and contributes one Target Resonance when fully coupled.
+- With perfect lock and sufficient Intensity, total Essence required equals entity Stability.
+- Higher Intensity spends the same total Essence faster; it does not make the encounter cheaper.
+- Multiple players add their current beam Intensities together against the shared Threshold.
+- Multiple sufficiently coupled beams add their Target Resonance rates together.
+
+Examples:
+
+- Lost Soul with normal Intensity `1`: five Essence over ten seconds.
+- Lost Soul with overload Intensity `2`: five Essence over five seconds.
+- Revenant with normal Intensity `1`: no effect because Threshold `2` is not met.
+- Revenant with overload Intensity `2`: twelve Essence over twelve seconds.
+- Wraith requires combined Intensity `3`: three normal beams, one normal plus one overload, two overload beams, or future equipment capable of Intensity `3`.
+
+The Will-o'-the-Wisp is the resource bootstrap exception. Its own spectral energy supplies the Level 1 extraction process, so the free automatic Resonance Beam can destabilize it over two seconds without consuming Capacitor Essence.
+
+Scanner progression increases maximum Resonance Intensity rather than introducing unrelated weapons:
+
+- Mk I Scanner: maximum Intensity `2`.
+- Mk II Scanner: maximum Intensity `3`.
+- Mk III Scanner: maximum Intensity `4`.
+
+The exact values remain subject to device and multiplayer playtesting.
+
+## Universal Discharge Circuit
+
+Discharge has one mechanical meaning everywhere: convert personal Capacitor Essence into timed Resonance power.
+
+- The first tap starts Discharge.
+- At normal Intensity `1`, one Essence is committed immediately and provides up to two seconds of power.
+- At the end of each packet, another Essence is committed automatically while Discharge remains active.
+- A second tap stops Discharge.
+- Stopping midway through a packet wastes its remaining potential; consumed Essence is never refunded.
+- Discharge stops automatically when the Capacitor empties.
+- The UI control alternates between `DISCHARGE` and `STOP`.
+
+Power is routed according to encounter state:
+
+- No active Manifestation: power charges the shared local Manifestation field.
+- Active Manifestation with Resonance Lock and sufficient combined Intensity: power builds Target Resonance.
+- Active Manifestation with Resonance Lock below Threshold: power is consumed without effect.
+- Active Manifestation without Resonance Lock: power is discharged but reaches no target.
+
+## Capacitor Overload
+
+The integrated Cell is both reserve ammunition and an overload amplifier.
+
+When the Cell is tapped:
+
+- If the Capacitor is below capacity, the Cell transfers only enough Essence to refill it. Any unused Cell charge remains stored.
+- If the Capacitor is already full, the Cell injects all its remaining charge above normal capacity.
+- The Capacitor visibly reads from `6/5` through `10/5`, depending on stored Cell charge.
+- Capacitor Overload occurs automatically and amplifies the active Resonance Beam.
+- Mk I Overload raises Intensity from `1` to `2`, shortens each Essence packet from two seconds to one, and therefore consumes two Essence per two seconds.
+- Overload delivers the same total Resonance per Essence in half the time.
+- A `10/5` overload sustains amplified output longer than a `6/5` overload; scanner hardware determines maximum Intensity.
+- The same rules apply to future equipment with larger Capacitor and Cell capacities.
+
+The exact balance of overload strength remains subject to device playtesting.
+
+# Resource Model
+
+## Veil Capacitor
+
+The Veil Capacitor is volatile, temporary scanner storage.
+
+- Initial capacity: **5 Veil Essence**.
+- Future scanner upgrades may increase capacity without changing the reload and overload rules.
+- Every extracted calm or agitated wisp adds one Essence.
+- Contents are lost if the app closes.
+- Tapping the Capacitor opens **UPLOAD**, **CONTAIN**, and **DISCHARGE**.
+
+The Capacitor may be operated before it is full. The consequences remain mechanically honest.
+
+### Upload
+
+- Consumes all current Capacitor Essence.
+- Performs local analysis.
+- Uploads the resulting research to the Veil Society.
+- Advances Veilogy and equipment unlocks.
+- Does not return the uploaded Essence.
+
+The offline prototype may represent Society uploads locally until a backend exists.
+
+### Contain
+
+`CONTAIN` has one meaning: transfer Essence from the Veil Capacitor into a Containment Cell.
+
+- Transfers as much identified Essence as the Cell can accept.
+- Automatically fills an incomplete Cell before any future Cell.
+- Removes the transferred amount from the Capacitor.
+- Unknown Essence cannot be Contained.
+
+### Discharge
+
+Discharge opens and closes the Universal Discharge Circuit.
+
+- At `0/5`, the scanner cannot begin Discharge.
+- Each Essence is consumed at the beginning of its packet. Packet duration is `2 / Intensity` seconds: two seconds normally and one second during Mk I Overload.
+- Packets continue automatically until the player taps `STOP` or the Capacitor empties.
+- A packet may contribute fully, partially, or not at all depending on how long useful contact is maintained.
+- Any unused time from an interrupted packet is wasted.
+- Without a Manifestation, useful packet time contributes to shared Manifestation Field Charge.
+- During a Manifestation, useful locked packet time contributes to Target Resonance.
+- During a Manifestation without lock, the packet is wasted.
+
+## Containment Cell
+
+A Containment Cell is persistent long-term storage for identified Veil Essence.
+
+- The first Cell unlocks automatically when research identifies the autonomous Veil Essence phenomenon.
+- The first Cell is free and integrated into the scanner.
+- The player does not craft the first Cell.
+- Capacity: **5 Veil Essence**.
+- Charge survives app relaunches.
+- Contain transfers Capacitor Essence into it.
+- The Cell is always visible on the scanner HUD after it is unlocked.
+- Tapping it while the Capacitor is below capacity reloads only the missing charge.
+- Tapping it while the Capacitor is full injects all remaining Cell charge and begins Capacitor Overload.
+- A Cell may be operated at any time. An overload without a useful target still consumes its charge.
+
+Additional Cells, Cell types, and equipment expansion are deferred.
+
+## Manifestation Field Charge
+
+Manifestation Field Charge belongs to the encounter, not to an individual player.
+
+- The initial entity requires **5 Essence-equivalent Resonance units**.
+- One complete normal Essence packet contributes one unit over two powered seconds.
+- Therefore one player requires five Essence and ten seconds of useful Discharge for the initial Manifestation.
+- Contribution is continuous. Stopping after one second of a two-second packet contributes half a unit and wastes the unspent half of that consumed Essence.
+- Field Charge persists for the current investigation when a player stops Discharge.
+- Future stronger entities may require `10`, `20`, or more units.
+- Multiple players may contribute simultaneously, reducing real elapsed summoning time.
+- When the shared requirement is reached, the encounter transitions to Manifestation exactly once for every participant.
+
+Field Charge must be represented independently from AR rendering and from every player's personal inventory so it can later become authoritative shared network state.
+
+## Unknown Essence
+
+- Unknown Essence may be held temporarily in the Capacitor.
+- It may be Uploaded or Discharged.
+- It cannot be transferred into a Containment Cell.
+- After sufficient uploaded research identifies the Essence type, future samples may be Contained.
+
+The initial Version 1 tuning target is that the first complete five-sample ambient Essence upload identifies the autonomous Veil Essence phenomenon, records `Will-o'-the-Wisp` as its folkloric designation, and unlocks the integrated Cell. This threshold may change after playtesting.
+
+# Wisp Encounters
+
+## Calm Will-o'-the-Wisps
+
+Calm wisps are the passive search and resource-gathering phase.
+
+Behaviour:
+
+- Slow drifting and swirling around the player.
+- Organic movement with a directional wisp trail.
+- `1d3` seconds of phase-in.
+- `2d3 + 3.25` seconds fully manifested and targetable, guaranteeing at least 5.25 seconds for reaction, lock, and beam contact.
+- `1d3` seconds of phase-out.
+- Relocation while fully concealed.
+- Collision with detected flat surfaces.
+- Surface traversal only when a second real detected surface provides an exit.
+- Honest reflection when no valid exit exists.
+
+Collection:
+
+- The player must move within one metre.
+- Resonance Lock requires 2.5 seconds of maintained aim.
+- At full lock, the automatic Resonance Beam engages.
+- Lock must then be maintained for a further two seconds while the beam extracts one Essence.
+- Extraction pulls the visual effect into the scanner, with the core collapsing last.
+
+## Agitated Will-o'-the-Wisps
+
+Agitated Wisps are a side effect of charging the Manifestation field. Their appearance tells the player that the summoning process is working.
+
+Behaviour target:
+
+- Three wisps.
+- Permanently visible during the encounter.
+- Nervous hovering.
+- `1d3` seconds of rapid darting.
+- `2d3 + 3.25` seconds of relative stillness and vulnerability, using the same guaranteed capture window as calm wisps.
+- No periodic fading.
+- No wall phasing.
+- Resonance Lock decays slowly during darts instead of instantly resetting.
+- The same 2.5-second full lock used for calm wisps.
+
+Each successful extraction does two independent things:
+
+1. Adds one Veil Essence to the Capacitor.
+2. Improves the player's available ammunition for the coming ghost encounter.
+
+The Agitated Wisps do not cause the Manifestation and are not a progression gate. The encounter provides a resupply opportunity during the transition, but the ghost eventually appears when shared Manifestation Field Charge reaches its requirement whether the players extract zero, one, two, or all three wisps.
+
+Example outcome:
+
+```text
+Manifestation Field: 5/5
+No wisps extracted: Capacitor 0/5
+One wisp extracted: Capacitor 1/5
+Two wisps extracted: Capacitor 2/5
+Three wisps extracted: Capacitor 3/5
+Ghost Manifestation begins in every case
+```
+
+The better the players perform during this resupply phase, the more enhanced Resonance Beam time they carry into the ghost encounter.
+
+# Ghost Manifestation
+
+## Unknown Entity
+
+The first Manifestation is initially displayed as `UNKNOWN ENTITY`.
+
+Maintaining Resonance:
+
+- Builds shared Target Resonance.
+- Applies an additional entity effect that remains to be designed.
+- Allows prepared players to reload the Capacitor and deliberately trigger Capacitor Overload.
+- Slowly loses Target Resonance when powered lock is lost instead of resetting instantly.
+
+When Target Resonance reaches the entity's Stability, the Version 1 scanner believes the entity has been successfully destabilized. The entity dissipates and releases Ghost Essence carrying its spectral signature.
+
+The Manifestation system must remain entity-agnostic. The Lost Soul is currently the only implemented ghost because other ghosts have not been designed. A future encounter may select among multiple possible ghost types without replacing the shared Resonance mechanics.
+
+## Current Lost Soul Prototype
+
+The currently implemented Lost Soul:
+
+- [x] Has a procedural translucent human silhouette.
+- [x] Drifts slowly and aimlessly.
+- [x] Periodically pauses, turns, and looks around.
+- [x] Shimmers, nearly disappears, and returns.
+- [x] Initially ignores the player.
+- [x] Notices and faces the player after the current one-second reticle lock.
+- [ ] Notices and faces the player in response to Resonance Beam contact rather than the reticle alone.
+- [x] Leans back, dissolves, and sinks into a detected surface.
+- [x] Emerges from another real detected surface when a route exists.
+- [ ] Uses the Version 1 Resonance Lock and Target Resonance system.
+- [ ] Responds to the Resonance Beam with the chosen entity-specific effect.
+- [ ] Responds to Capacitor Overload according to overload magnitude.
+- [ ] Slowly loses Target Resonance when powered lock is interrupted.
+- [ ] Dissipates when Target Resonance reaches its Stability requirement.
+- [ ] Dissolves into small Ghost Essence wisps that spiral into the scanner.
+
+The current notice-and-surface-escape behaviour may remain part of the encounter, but it must no longer be the complete ghost resolution.
+
+# Ghost Essence, Ectoplasm, And Ghost Research
+
+## Ghost Essence
+
+Ghost Essence is Veil Essence released from a human soul. It is not the soul itself and is not a separate Capacitor currency.
+
+Version 1 target:
+
+- A resolved Manifestation dissolves into multiple small Ghost Essence wisps.
+- The wisps separate visibly from the human form and spiral into the scanner.
+- The soul is not collected as inventory. Only released Veil Essence enters the Capacitor.
+- Ghost Essence retains the originating entity's spectral signature and provenance metadata.
+- The Capacitor counts Ghost Essence using the same capacity and transfer rules as other Veil Essence.
+- Unknown Ghost Essence cannot be Contained because its behaviour has not been classified.
+- Unknown Ghost Essence must be Uploaded.
+- Upload uses its spectral signature to associate the sample with the originating unknown entity.
+- These uploads progressively increase identification confidence.
+
+Later research reveals that a Lost Soul should be helped through a Rift rather than forcibly destabilized. A successful crossing may still shed excess Ghost Essence without implying that the soul itself was harvested.
+
+Example research presentation:
+
+```text
+UNKNOWN ENTITY
+20%
+40%
+60%
+80%
+100%
+
+IDENTIFIED
+LOST SOUL
+VEILOLOGY UPDATED
+```
+
+The exact number and type of samples required for ghost identification remain intentionally undecided.
+
+Future uploads for already identified entities contribute to general Veil Society research.
+
+## Ectoplasm
+
+Ectoplasm is condensed spectral matter produced only when particular entities or phenomena create a persistent physical interaction with the material world. It is not default ghost residue.
+
+Possible ectoplasm-producing phenomena include:
+
+- Physically expressive or amorphous entities.
+- Poltergeist activity that moves or damages material objects.
+- Hauntings that leave persistent deposits.
+- Spectral contamination concentrated in a room or object.
+
+`Ectoplasmic Energy` is Veil Essence bound within this condensed spectral matter. The term describes the Essence's physical state and source, not an unrelated universal energy or automatic new currency.
+
+Ectoplasm is deferred until an entity or investigation genuinely requires different material behaviour. Its eventual mechanics may use collision, deposits, environmental sampling, or extraction, but must not be added merely because conventional ghost fiction expects slime.
+
+# Veilogy And Research
+
+## Veil Essence Identification
+
+The autonomous Veil Essence phenomenon must be identified through Upload, not merely because three agitated wisps were extracted. Its primary Veilogy entry is named `VEIL ESSENCE`; `Will-o'-the-Wisp` appears as its folkloric designation.
+
+Target entry structure:
+
+```text
+VEIL ESSENCE
+
+CLASSIFICATION
+SPECTRAL ENERGY
+
+OBSERVED PHENOMENON
+AUTONOMOUS ESSENCE CONCENTRATION
+
+FOLKLORIC DESIGNATION
+WILL-O'-THE-WISP
+```
+
+Target behaviour:
+
+- [x] Upload advances Wisp research.
+- [x] Sufficient Wisp research permanently identifies the phenomenon.
+- [x] Identification unlocks the integrated Containment Cell.
+- [ ] Known wisps are recognised immediately in later investigations.
+- [x] The scanner device menu contains a browsable Book of Veilogy.
+- [x] A persistent Will-o'-the-Wisp identification flag currently exists.
+- [x] Move the existing identification trigger from the post-hunt sequence to Upload.
+
+## Ghost Identification
+
+- [ ] Ghost observation system.
+- [ ] Ghost Essence release and scanner-collection sequence.
+- [ ] Preserve ghost provenance and spectral-signature metadata in collected Veil Essence.
+- [ ] Ghost-specific research progress.
+- [ ] Persistent ghost classification state.
+- [ ] Locked or redacted Veilogy entries before identification.
+- [ ] Updated entries after sufficient evidence.
+
+# Scanner Experience
+
+The player should feel like they are operating real paranormal field equipment rather than collecting floating objects.
+
+## Investigation Presentation
+
+1. **Veil Scanner boots**
+   - [x] CRT flicker.
+   - [x] `INITIALIZING SPECTRAL ARRAYS...`
+   - [x] Low electronic hum.
+2. **Spectral Lens engages**
+   - [x] The real-world camera feed desaturates and receives a cool spectral treatment.
+   - [x] The filter does not soften virtual entities.
+   - [x] Veil atmosphere and scanner noise begin.
+3. **Passive search**
+   - [x] A Spectral Resonance Monitor moves continuously.
+   - [x] Tiny false spikes appear even when no anomaly is nearby.
+4. **Anomaly detected**
+   - [x] The monitor spikes.
+   - [x] A short detection beep plays.
+   - [x] The reticle gains cyan brackets.
+   - [x] `ANOMALY DETECTED` appears.
+5. **Resonance Lock**
+   - [x] Signal amplitude and regularity respond to proximity and aim.
+   - [x] A circular progress meter fills.
+   - [x] Replace the current `CONTAINMENT LOCK` label with `RESONANCE LOCK`.
+6. **Resonance Beam and Extraction**
+   - [x] Full wisp lock automatically engages the Resonance Beam.
+   - [x] Unstable Veil Essence streams into the scanner.
+   - [x] The Capacitor counter increases.
+   - [x] Present the automatic extraction explicitly as the Resonance Beam.
+   - [x] Require a further two seconds of maintained powered lock before extraction completes.
+7. **Research and field decisions**
+   - [x] Tapping the Capacitor presents Upload, Contain, and Discharge.
+   - [x] Upload research updates Veilogy.
+   - [x] Contain transfers charge into the integrated Cell.
+   - [x] Make Discharge a start/stop control that consumes one Essence per two-second packet.
+   - [x] Route useful Discharge time into Manifestation Field Charge or Target Resonance.
+
+# Current Prototype Status
+
+## Essence Presentation And Movement
+
+- [x] One shared ambient Veil Essence / Will-o'-the-Wisp phenomenon.
+- [x] Layered 3D energy volume with a bright core, irregular plasma, motes, and directional cyan and violet wisps.
+- [x] Independent motion among core, plasma, and outer energy layers.
+- [x] Slow swirling movement around the player.
+- [x] Wisp trails rotate with movement direction while retaining their visible extension.
+- [x] Calm phase-in, capture window, phase-out, and concealed cycle.
+- [x] Detected-surface collision uses the same geometry validated by the Phase Cube.
+- [x] Real two-surface traversal when an exit exists.
+- [x] Honest bounce when no exit exists.
+- [x] Screen-space essence halos disabled after they produced detached glow artifacts.
+
+## Resource Flow
+
+- [x] Five calm Essence fill the Capacitor.
+- [x] Tapping the Capacitor presents Upload, Contain, and Discharge.
+- [x] Upload consumes the current charge and persistently advances research.
+- [x] Identifying the Will-o'-the-Wisp unlocks one integrated rechargeable Cell.
+- [x] Legacy crafted Cell inventory migrates honestly into the integrated Cell.
+- [x] Contain transfers identified Essence into persistent Cell charge.
+- [x] All three Capacitor actions are available at partial charge during calm search.
+- [x] The integrated Cell is visible and directly operable from the main scanner HUD.
+- [x] Cell activation below `5/5` refills only the Capacitor deficit and preserves unused Cell charge.
+- [x] Cell activation at `5/5` creates temporary `6/5` through `10/5` overcapacity.
+- [x] Overcapacity visibly drains through a beam presentation whose magnitude scales with excess charge.
+- [x] Capacitor and Cell capacities come from an equipment configuration that can support future upgrades.
+- [x] Replace all-at-once Discharge with the universal two-second packet circuit.
+- [x] Add encounter-owned Manifestation Field Charge with a configurable requirement.
+- [x] Persist useful partial field contribution during the current investigation.
+- [x] Make Agitated Wisp extraction optional ammunition recovery rather than a Manifestation gate.
+- [x] Allow the ghost to appear with Capacitor charge from `0/5` through `3/5` depending on resupply performance.
+- [x] Treat Capacitor Overload as amplification of the same Resonance Beam rather than a separately named beam.
+
+## Existing Agitated Behaviour To Replace
+
+The current prototype still includes disappearance and detected-surface phasing during the agitated hunt. Version 1 now targets continuous visibility and lock decay for a fairer pursuit.
+
+- [x] Rapid darting and stationary vulnerability phases exist.
+- [x] Universal 2.5-second wisp lock exists.
+- [ ] Remove periodic agitated fading.
+- [ ] Remove agitated wall phasing.
+- [x] Preserve partial Resonance Lock through brief darting interruptions.
+- [x] The current prototype displays a separate `0/3` encounter objective while adding extracted Essence to the Capacitor.
+- [x] Reframe `0/3` as optional resupply performance rather than required encounter progress.
+
+## AR Surface Validation
+
+- [x] Horizontal and vertical plane detection.
+- [x] Stable plane cache.
+- [x] Plane-extent rotation included in collision checks.
+- [x] Colored debug-plane overlays removed because they did not communicate practical collision quality.
+- [x] Phase Cube debug toggle.
+- [x] Phase Cube collision and bounce observed accurately on physical surfaces.
+- [x] One-second melt, two-second concealment, and one-second emergence implementation.
+- [x] No fabricated exit when a second real surface is unavailable.
+
+# Multiplayer
+
+Cooperative multiplayer is required for the Version 1 release, but the single-player loop remains the immediate development focus.
+
+Intended encounter model:
+
+- Nearby players may join an active investigation without bringing mandatory resources.
+- Every player owns their Capacitor, Containment Cell, Resonance Lock, active Discharge packet, and Beam connection.
+- Manifestation Field Charge, its required charge, encounter phase, and Target Resonance belong to the shared encounter.
+- Every player may contribute timed Discharge power to the same Manifestation field.
+- Simultaneous useful Beam time adds to Field Charge concurrently and reduces real summoning time.
+- Initial entities may require `5` shared units; tougher future entities may require `10`, `20`, or more.
+- During a Manifestation, every locked powered Beam contributes to the same Target Resonance.
+- Target Resonance is shared encounter progress.
+- Equipment and stored resources remain player-specific.
+
+Architecture should move toward:
+
+- Stable entity and encounter identifiers.
+- Gameplay state represented independently from AR rendering state.
+- Serializable encounter events and timestamps.
+- One authoritative encounter state with multiple contributing players.
+- Atomic, uniquely identified Essence-packet contributions so a network retry cannot duplicate charge.
+- One authoritative threshold transition so a completed field manifests its entity exactly once.
+- Device-local visual effects driven by shared gameplay events.
+
+Implementation:
+
+- [x] Separate gameplay-critical encounter state from renderer-only animation state.
+- [x] Introduce local encounter-owned Field Charge before networking it.
+- [ ] Define shared encounter events.
+- [ ] Define nearby-session discovery and world alignment.
+- [ ] Synchronize Target Resonance and entity state.
+- [ ] Handle joining, leaving, interruption, and host migration.
+
+# Version 1 Scope
+
+Included for release:
+
+- Will-o'-the-Wisp investigation.
+- Veil Capacitor.
+- Integrated Containment Cell.
+- Upload, Contain, and Discharge.
+- Agitated Wisp hunt.
+- Ghost Manifestation.
+- Resonance Lock and Resonance Beam.
+- Capacitor Overload beam amplification.
+- Ghost Essence release, collection, and spectral-signature analysis.
+- Progressive Veilogy research.
+- Cooperative multiplayer.
+
+Deferred:
+
+- Veil Rifts.
+- Ghost crossings.
+- Containment traps.
+- Multiple Essence recipes.
+- Multiple Containment Cell types.
+- Ectoplasm-producing entities and environmental residue investigations.
+- Advanced equipment trees.
+- Persistent local Veil Integrity.
+- Hotspots and Hellmouths.
+
+# Long-Term Investigation Arc
+
+```text
+Research
+-> Veil Essence
+-> Upload, Contain, or Discharge
+-> Agitated Wisp Hunt
+-> Manifestation
+-> Ghost Investigation
+-> Spectral Signature
+-> Ghost Essence Release
+-> Ghost Essence Upload
+-> Rift Discovery
+-> Crossing or Forced Removal
+-> Veilogy Knowledge
+-> Local Veil Instability
+-> Hotspot
+-> Major Haunting
+-> Hellmouth
+```
+
+The first release intentionally begins with an incomplete scientific understanding. The later realization that some entities should be helped rather than merely destabilized is part of the world, the progression system, and the emotional arc of The Veil.

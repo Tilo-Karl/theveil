@@ -1,44 +1,7 @@
 #include <metal_stdlib>
 #include <RealityKit/RealityKit.h>
+#include "SpectralNoise.metalh"
 using namespace metal;
-
-float essenceHash(float3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.yzx + 33.33);
-    return fract((p.x + p.y) * p.z);
-}
-
-float essenceNoise(float3 p) {
-    float3 cell = floor(p);
-    float3 local = fract(p);
-    local = local * local * (3.0 - 2.0 * local);
-
-    float n000 = essenceHash(cell + float3(0, 0, 0));
-    float n100 = essenceHash(cell + float3(1, 0, 0));
-    float n010 = essenceHash(cell + float3(0, 1, 0));
-    float n110 = essenceHash(cell + float3(1, 1, 0));
-    float n001 = essenceHash(cell + float3(0, 0, 1));
-    float n101 = essenceHash(cell + float3(1, 0, 1));
-    float n011 = essenceHash(cell + float3(0, 1, 1));
-    float n111 = essenceHash(cell + float3(1, 1, 1));
-
-    float x00 = mix(n000, n100, local.x);
-    float x10 = mix(n010, n110, local.x);
-    float x01 = mix(n001, n101, local.x);
-    float x11 = mix(n011, n111, local.x);
-    return mix(mix(x00, x10, local.y), mix(x01, x11, local.y), local.z);
-}
-
-float essenceFBM(float3 p) {
-    float value = 0.0;
-    float amplitude = 0.52;
-    for (int octave = 0; octave < 4; ++octave) {
-        value += essenceNoise(p) * amplitude;
-        p = p * 2.03 + float3(7.1, 3.7, 5.4);
-        amplitude *= 0.48;
-    }
-    return value;
-}
 
 [[visible]]
 void essencePlasmaGeometry(realitykit::geometry_parameters params) {
@@ -53,8 +16,8 @@ void essencePlasmaGeometry(realitykit::geometry_parameters params) {
         0.45 + sin(controls.z * 2.3),
         sin(controls.z * 1.1)
     ));
-    float noise = essenceFBM(position * 35.0 + float3(0, time * 0.24, controls.z * 11.0));
-    float lobeNoise = essenceFBM(
+    float noise = spectralFBM(position * 35.0 + float3(0, time * 0.24, controls.z * 11.0));
+    float lobeNoise = spectralFBM(
         direction * 2.6
             + phaseAxis * 1.9
             + float3(time * 0.09, -time * 0.07, time * 0.05)
@@ -84,8 +47,8 @@ void essencePlasmaSurface(realitykit::surface_parameters params) {
     float4 controls = params.uniforms().custom_parameter();
     float time = params.uniforms().time();
     float3 position = geometry.model_position();
-    float noiseA = essenceFBM(position * 42.0 + float3(time * 0.16, -time * 0.21, controls.z * 9.0));
-    float noiseB = essenceFBM(position * 73.0 + float3(-time * 0.11, controls.z * 13.0, time * 0.19));
+    float noiseA = spectralFBM(position * 42.0 + float3(time * 0.16, -time * 0.21, controls.z * 9.0));
+    float noiseB = spectralFBM(position * 73.0 + float3(-time * 0.11, controls.z * 13.0, time * 0.19));
     float vein = smoothstep(0.54, 0.84, noiseA * 0.72 + noiseB * 0.46);
     float pulse = 0.82 + sin(time * 1.65 + controls.z * 7.0) * 0.18;
     float3 cyan = float3(0.06, 0.68, 1.0);
@@ -114,7 +77,7 @@ void essenceRibbonSurface(realitykit::surface_parameters params) {
     float edgeDistance = 1.0 - abs(uv.y * 2.0 - 1.0);
     float softEdge = smoothstep(0.0, 0.72, edgeDistance);
     float endFade = smoothstep(0.0, 0.1, uv.x) * (1.0 - smoothstep(0.82, 1.0, uv.x));
-    float flow = essenceFBM(float3(uv.x * 6.0 - time * 0.32, uv.y * 2.4, controls.z * 8.0));
+    float flow = spectralFBM(float3(uv.x * 6.0 - time * 0.32, uv.y * 2.4, controls.z * 8.0));
     float filament = smoothstep(0.28, 0.78, flow);
     float flicker = 0.76 + sin(time * 2.1 + uv.x * 17.0 + controls.z * 5.0) * 0.24;
     float isWisp = step(0.5, kind.x);
