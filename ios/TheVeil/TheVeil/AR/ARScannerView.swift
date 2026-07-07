@@ -31,6 +31,7 @@ extension ARScannerView {
         private let viewModel: ARScannerViewModel
         private let essenceRenderer = ARSceneEssenceRenderer()
         private let lostSoulRenderer = ARSceneLostSoulRenderer()
+        private let specterRenderer = ARSceneSpecterRenderer()
         private let cameraPostProcessor = VeilCameraPostProcessor()
         private let planeCache = PlaneDetectionCache()
         private weak var arView: ARView?
@@ -48,7 +49,7 @@ extension ARScannerView {
         #endif
 
         private let essenceCollectionDistance: Float = 1
-        private let lostSoulTrackingDistance: Float = 3
+        private let manifestationTrackingDistance: Float = 3
         private let lockOnScreenRadius: CGFloat = 56
 
         init(viewModel: ARScannerViewModel) {
@@ -95,6 +96,7 @@ extension ARScannerView {
                 #if DEBUG
                 traversalDebugRenderer.remove(from: arView)
                 #endif
+                specterRenderer.remove(from: arView)
             }
             viewModel.clearLockOn()
         }
@@ -201,7 +203,11 @@ extension ARScannerView {
                 at: displayLink.timestamp,
                 cameraPosition: arView.cameraTransform.translation
             )
-            manifestLostSoulIfNeeded(in: arView)
+            specterRenderer.update(
+                at: displayLink.timestamp,
+                cameraPosition: arView.cameraTransform.translation
+            )
+            synchronizeManifestationRenderers(in: arView)
             updatePostProcessEffects(in: arView)
 
             let previousResonanceUpdateAt = lastResonanceUpdateAt ?? displayLink.timestamp
@@ -341,10 +347,19 @@ extension ARScannerView {
                     .target
             }
 
+            if
+                let specter = viewModel.specterStore.activeSpecter,
+                let worldPosition = specterRenderer.worldPosition(for: specter.id),
+                simd_distance(cameraPosition, worldPosition) <= manifestationTrackingDistance,
+                aimedScreenDistance(to: worldPosition, center: center, in: arView) != nil
+            {
+                return .specter(id: specter.id, worldPosition: worldPosition)
+            }
+
             guard
                 let lostSoul = viewModel.lostSoulStore.lostSoul,
                 let worldPosition = lostSoulRenderer.worldPosition(for: lostSoul.id),
-                simd_distance(cameraPosition, worldPosition) <= lostSoulTrackingDistance,
+                simd_distance(cameraPosition, worldPosition) <= manifestationTrackingDistance,
                 aimedScreenDistance(to: worldPosition, center: center, in: arView) != nil
             else {
                 return nil
@@ -420,12 +435,16 @@ extension ARScannerView {
             return screenDistance <= lockOnScreenRadius ? screenDistance : nil
         }
 
-        private func manifestLostSoulIfNeeded(in arView: ARView) {
-            guard let lostSoul = viewModel.lostSoulStore.lostSoul else {
-                return
+        private func synchronizeManifestationRenderers(in arView: ARView) {
+            if let specter = viewModel.specterStore.activeSpecter {
+                specterRenderer.render(specter, in: arView)
+            } else {
+                specterRenderer.remove(from: arView)
             }
 
-            lostSoulRenderer.render(lostSoul, in: arView)
+            if let lostSoul = viewModel.lostSoulStore.lostSoul {
+                lostSoulRenderer.render(lostSoul, in: arView)
+            }
         }
 
         private func collectEssence(id: AmbientEssence.ID, in arView: ARView) {
@@ -467,10 +486,11 @@ extension ARScannerView {
 private enum ScannerTarget {
     case essence(id: AmbientEssence.ID, worldPosition: SIMD3<Float>)
     case lostSoul(id: LostSoul.ID, worldPosition: SIMD3<Float>)
+    case specter(id: Specter.ID, worldPosition: SIMD3<Float>)
 
     var id: UUID {
         switch self {
-        case .essence(let id, _), .lostSoul(let id, _):
+        case .essence(let id, _), .lostSoul(let id, _), .specter(let id, _):
             return id
         }
     }

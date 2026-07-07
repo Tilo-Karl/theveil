@@ -6,6 +6,6 @@ enum ARScannerStatus: Equatable {
     case charged
     case discharging
     case hunting
-    case lostSoulManifested
+    case minorSpecterManifested
     case unavailable
 }

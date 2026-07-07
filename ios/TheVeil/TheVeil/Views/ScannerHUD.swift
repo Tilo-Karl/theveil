@@ -102,7 +102,7 @@ struct ScannerHUD: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Image(systemName: scannerStateStore.status == .lostSoulManifested ? "scope" : "viewfinder")
+            Image(systemName: scannerStateStore.status == .minorSpecterManifested ? "scope" : "viewfinder")
                 .font(.body.weight(.light))
                 .foregroundStyle(.cyan)
 
@@ -163,7 +163,7 @@ struct ScannerHUD: View {
             return AppStrings.resonanceBeamProgress(viewModel.resonanceBeamProgress)
         }
 
-        if scannerStateStore.status == .lostSoulManifested {
+        if scannerStateStore.status == .minorSpecterManifested {
             return viewModel.signalMode == .locking
                 ? AppStrings.entitySignalLockedStatus
                 : AppStrings.entityResonanceDetectedStatus

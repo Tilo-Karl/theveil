@@ -101,9 +101,9 @@ final class SpecterVFXFactory {
         component.emitterShape = .sphere
         component.emitterShapeSize = SIMD3<Float>(0.48, 0.48, 0.48)
         component.birthLocation = .surface
-        component.birthDirection = .worldY
+        component.birthDirection = .local
         component.emissionDirection = SIMD3<Float>(0, 1, 0)
-        component.fieldSimulationSpace = .world
+        component.fieldSimulationSpace = .local
         component.particlesInheritTransform = true
         component.speed = 0.055
         component.speedVariation = 0.022

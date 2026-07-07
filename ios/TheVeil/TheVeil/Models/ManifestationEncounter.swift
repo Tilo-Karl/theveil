@@ -15,6 +15,11 @@ struct EntityResonanceProfile: Codable, Equatable, Sendable {
         threshold: 1,
         stability: 5
     )
+
+    nonisolated static let minorSpecter = EntityResonanceProfile(
+        threshold: 1,
+        stability: 5
+    )
 }
 
 struct ManifestationEncounterState: Codable, Equatable, Sendable {

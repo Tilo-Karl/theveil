@@ -39,6 +39,8 @@ enum AppStrings {
     static let searchingAgitatedWispsStatus = "SEARCHING FOR AGITATED WISPS"
     static let passiveSearchStatus = "PASSIVE SEARCH"
     static let anomalyDetectedStatus = "ANOMALY DETECTED"
+    static let veilogyThreatLevelLabel = "THREAT LEVEL"
+    static let veilogyResearchStatusLabel = "RESEARCH STATUS"
 
     static func wispResearchProgress(_ current: Int, required: Int) -> String {
         "WISP RESEARCH \(current) / \(required)"
@@ -60,7 +62,7 @@ enum AppStrings {
     static let scannerUnavailableTitle = "AR scanner unavailable"
     static let scannerUnavailableMessage = "Open The Veil on an ARKit-capable device to scan for ambient essence."
     static let collectingHint = "Move close and aim at essence to collect it."
-    static let lostSoulHint = "Hold the reticle on the Lost Soul."
+    static let minorSpecterHint = "Hold the reticle on the Minor Specter."
     static let cameraUsageDescription = "The Veil uses the camera to scan your surroundings for ambient Veil Essence."
 
     static func scannerStatusText(_ status: ARScannerStatus) -> String {
@@ -75,8 +77,8 @@ enum AppStrings {
             return "Discharging Veil Capacitor"
         case .hunting:
             return "Tracking agitated essence"
-        case .lostSoulManifested:
-            return "Lost Soul manifested"
+        case .minorSpecterManifested:
+            return "Minor Specter manifested"
         case .unavailable:
             return scannerUnavailableTitle
         }
@@ -84,8 +86,8 @@ enum AppStrings {
 
     static func scannerHintText(_ status: ARScannerStatus) -> String {
         switch status {
-        case .lostSoulManifested:
-            return lostSoulHint
+        case .minorSpecterManifested:
+            return minorSpecterHint
         case .initializing, .scanning, .charged, .discharging, .hunting, .unavailable:
             return collectingHint
         }

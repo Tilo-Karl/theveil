@@ -181,7 +181,7 @@ extension ARScannerViewModel {
         case .awakenedHunt:
             scannerStateStore.setStatus(.hunting)
         case .manifestation:
-            scannerStateStore.setStatus(.lostSoulManifested)
+            scannerStateStore.setStatus(.minorSpecterManifested)
         }
     }
 
@@ -232,12 +232,13 @@ extension ARScannerViewModel {
             return
         }
 
-        encounterStore.beginManifestation(profile: .lostSoul)
+        encounterStore.beginManifestation(profile: .minorSpecter)
         visibleEssenceStore.replace(with: [])
         essenceFieldRevision += 1
         gameplayPhase = .manifestation
-        scannerStateStore.setStatus(.lostSoulManifested)
-        lostSoulStore.manifest(LostSoul(id: UUID()))
+        scannerStateStore.setStatus(.minorSpecterManifested)
+        lostSoulStore.clear()
+        specterStore.manifestMinorSpecter()
         presentBriefNotice(.manifestationDetected, milliseconds: 1_500)
     }
 

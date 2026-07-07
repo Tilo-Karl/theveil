@@ -198,10 +198,38 @@ private struct VeilogyEntryView: View {
                 Text(entry.classification)
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(.cyan)
+
+                if let threatLevel = entry.threatLevel {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(AppStrings.veilogyThreatLevelLabel)
+                            .font(.caption2.monospaced().weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(threatLevel)
+                            .font(.callout.monospaced().weight(.bold))
+                            .foregroundStyle(Color(red: 0.72, green: 0.42, blue: 1))
+                    }
+                }
+
                 Text(entry.body)
                     .font(.body)
                     .foregroundStyle(.white.opacity(0.9))
                     .lineSpacing(5)
+
+                ForEach(entry.sections) { section in
+                    Divider().overlay(Color.cyan.opacity(0.2))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.title)
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.cyan)
+                        Text(section.body)
+                            .font(.body)
+                            .foregroundStyle(.white.opacity(0.88))
+                            .lineSpacing(5)
+                    }
+                }
+
+                Divider().overlay(Color.cyan.opacity(0.2))
+                VeilogyResearchStatusView(items: entry.researchStatus)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
@@ -212,80 +240,24 @@ private struct VeilogyEntryView: View {
     }
 }
 
-private struct VeilogyEntry: Identifiable {
-    let id = UUID()
-    let title: String
-    let classification: String
-    let body: String
+private struct VeilogyResearchStatusView: View {
+    let items: [VeilogyResearchItem]
 
-    static let foundations = [
-        VeilogyEntry(
-            title: "THE VEIL SOCIETY",
-            classification: "ORGANIZATION",
-            body: "An ancient network of independent researchers devoted to observing, documenting and understanding supernatural phenomena. Its purpose is not to destroy the supernatural, but to understand it."
-        ),
-        VeilogyEntry(
-            title: "VEILOLOGY",
-            classification: "ACADEMIC DISCIPLINE",
-            body: "The scientific study of the Veil. Veilogy classifies supernatural phenomena by observable origin, behaviour and measurable characteristics rather than myth or tradition."
-        ),
-        VeilogyEntry(
-            title: "THE VEIL",
-            classification: "INTERDIMENSIONAL BOUNDARY",
-            body: "The invisible boundary separating the Natural World from the unknown Spirit World. It is not a place, but the membrane separating worlds."
-        ),
-        VeilogyEntry(
-            title: "VEIL SCANNER",
-            classification: "FIELD EQUIPMENT",
-            body: "The primary investigative instrument of the Veil Society. It detects, analyses and temporarily stores Veil Essence, identifies known anomalies and documents field observations."
-        ),
-        VeilogyEntry(
-            title: "VEIL ESSENCE",
-            classification: "SPECTRAL ENERGY",
-            body: "The fundamental energy associated with the Veil. It naturally permeates the boundary between worlds and possesses no known consciousness."
-        ),
-        VeilogyEntry(
-            title: "ECTOPLASM",
-            classification: "SPECTRAL MATTER",
-            body: "Condensed spectral matter formed when Veil Essence interacts with the physical world. It may remain as recoverable residue after significant supernatural events."
-        ),
-        VeilogyEntry(
-            title: "MANIFESTATION",
-            classification: "VEIL EVENT",
-            body: "An event in which disturbances in the Veil become severe enough to allow coherent supernatural phenomena to emerge into the Natural World."
-        )
-    ]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(AppStrings.veilogyResearchStatusLabel)
+                .font(.caption.monospaced().weight(.bold))
+                .foregroundStyle(.cyan)
 
-    static let ghosts = [
-        VeilogyEntry(
-            title: "GHOSTS",
-            classification: "HUMAN SOUL",
-            body: "The surviving soul of a once-living being that has not completed its passage through the Veil or has otherwise returned from it."
-        ),
-        VeilogyEntry(
-            title: "LOST SOUL",
-            classification: "GHOST - THREAT I",
-            body: "A recently deceased soul that failed to complete its passage through the Veil. Most Lost Souls are confused rather than hostile."
-        ),
-        VeilogyEntry(
-            title: "PHANTOM",
-            classification: "GHOST - THREAT II",
-            body: "A coherent ghost that recognizes itself, its surroundings and often its former life."
-        ),
-        VeilogyEntry(
-            title: "REVENANT",
-            classification: "GHOST - THREAT III",
-            body: "A ghost that remains because of a singular unresolved purpose. Everything unrelated to that purpose gradually fades."
-        ),
-        VeilogyEntry(
-            title: "WRAITH",
-            classification: "GHOST - THREAT IV",
-            body: "A ghost that has lost nearly all personal identity, leaving instinct and overwhelming emotion."
-        ),
-        VeilogyEntry(
-            title: "POLTERGEIST",
-            classification: "BEHAVIOURAL PHENOMENON",
-            body: "Not a ghost species. Poltergeist is a designation for hauntings that exhibit sustained physical interaction with the material world."
-        )
-    ]
+            ForEach(items) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Image(systemName: item.isDocumented ? "checkmark.circle.fill" : "xmark.circle")
+                        .foregroundStyle(item.isDocumented ? .cyan : .secondary)
+                    Text(item.title)
+                        .font(.callout)
+                        .foregroundStyle(item.isDocumented ? .white.opacity(0.9) : .secondary)
+                }
+            }
+        }
+    }
 }

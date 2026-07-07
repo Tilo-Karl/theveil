@@ -8,6 +8,7 @@ final class ARScannerViewModel: ObservableObject {
     let researchStore: WispResearchStore
     let visibleEssenceStore: VisibleEssenceStore
     let lostSoulStore: LostSoulStore
+    let specterStore: SpecterStore
     let encounterStore: ManifestationEncounterStore
     let dischargeCircuitStore: DischargeCircuitStore
 
@@ -61,6 +62,7 @@ final class ARScannerViewModel: ObservableObject {
         self.researchStore = WispResearchStore()
         self.visibleEssenceStore = VisibleEssenceStore()
         self.lostSoulStore = LostSoulStore()
+        self.specterStore = SpecterStore()
         self.encounterStore = ManifestationEncounterStore()
         self.dischargeCircuitStore = dischargeCircuitStore
         self.essenceFactory = AmbientEssenceFactory()
@@ -80,6 +82,7 @@ final class ARScannerViewModel: ObservableObject {
         researchStore: WispResearchStore,
         visibleEssenceStore: VisibleEssenceStore,
         lostSoulStore: LostSoulStore,
+        specterStore: SpecterStore,
         encounterStore: ManifestationEncounterStore,
         dischargeCircuitStore: DischargeCircuitStore,
         essenceFactory: AmbientEssenceFactory
@@ -89,6 +92,7 @@ final class ARScannerViewModel: ObservableObject {
         self.researchStore = researchStore
         self.visibleEssenceStore = visibleEssenceStore
         self.lostSoulStore = lostSoulStore
+        self.specterStore = specterStore
         self.encounterStore = encounterStore
         self.dischargeCircuitStore = dischargeCircuitStore
         self.essenceFactory = essenceFactory
@@ -224,6 +228,7 @@ final class ARScannerViewModel: ObservableObject {
         scannerStateStore.setStatus(.unavailable)
         visibleEssenceStore.replace(with: [])
         lostSoulStore.clear()
+        specterStore.clear()
     }
 
     func collectEssence(id: AmbientEssence.ID) -> Bool {
@@ -332,6 +337,7 @@ final class ARScannerViewModel: ObservableObject {
     private func prepareScannerField() {
         visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
         lostSoulStore.clear()
+        specterStore.clear()
         encounterStore.reset()
         gameplayPhase = .calmSearch
         awakenedExtractionCount = 0
@@ -345,6 +351,7 @@ final class ARScannerViewModel: ObservableObject {
         clearLockOn()
         visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
         lostSoulStore.clear()
+        specterStore.clear()
         awakenedExtractionCount = 0
         gameplayPhase = inventoryStore.capacitorEssenceCount == inventoryStore.equipment.capacitorCapacity
             ? .charged
