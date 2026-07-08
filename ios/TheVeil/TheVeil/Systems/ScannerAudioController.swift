@@ -118,6 +118,17 @@ final class ScannerAudioController: ObservableObject {
         )
     }
 
+    func playSpecterCombatFeedback(_ feedback: SpecterCombatFeedback) {
+        switch feedback {
+        case .incoming:
+            playEffect(detectionBeepBuffer, volume: 0.88)
+        case .hit, .scannerFailsafe:
+            playEffect(dischargePulseBuffer, volume: 0.96)
+        case .dodged:
+            playEffect(essenceStorageChirpBuffer, volume: 0.54)
+        }
+    }
+
     func stop() {
         humNode.stop()
         scannerNoiseNode.stop()

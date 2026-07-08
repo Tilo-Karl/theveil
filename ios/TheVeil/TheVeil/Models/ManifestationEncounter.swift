@@ -5,20 +5,21 @@ enum ManifestationEncounterPhase: String, Codable, Equatable, Sendable {
     case resupply
     case manifested
     case resolved
+    case escaped
 }
 
 struct EntityResonanceProfile: Codable, Equatable, Sendable {
-    let threshold: Int
-    let stability: Double
+    let resonanceResistance: Double
+    let ectoplasmicIntegrity: Double
 
     nonisolated static let lostSoul = EntityResonanceProfile(
-        threshold: 1,
-        stability: 5
+        resonanceResistance: 0,
+        ectoplasmicIntegrity: 5
     )
 
     nonisolated static let minorSpecter = EntityResonanceProfile(
-        threshold: 1,
-        stability: 5
+        resonanceResistance: 0,
+        ectoplasmicIntegrity: 10
     )
 }
 
@@ -27,7 +28,7 @@ struct ManifestationEncounterState: Codable, Equatable, Sendable {
     var phase: ManifestationEncounterPhase
     var fieldCharge: Double
     let requiredFieldCharge: Double
-    var targetResonance: Double
+    var ectoplasmicDamage: Double
     var entityProfile: EntityResonanceProfile?
 
     nonisolated static func initial(
@@ -38,7 +39,7 @@ struct ManifestationEncounterState: Codable, Equatable, Sendable {
             phase: .chargingField,
             fieldCharge: 0,
             requiredFieldCharge: requiredFieldCharge,
-            targetResonance: 0,
+            ectoplasmicDamage: 0,
             entityProfile: nil
         )
     }
@@ -48,4 +49,5 @@ enum EncounterResonanceResult: Equatable {
     case noEffect
     case progressed(current: Double, required: Double)
     case thresholdReached
+    case insufficientOutput(output: Double, resistance: Double)
 }

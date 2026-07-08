@@ -7,5 +7,6 @@ enum ARScannerStatus: Equatable {
     case discharging
     case hunting
     case minorSpecterManifested
+    case scannerFailsafe
     case unavailable
 }

@@ -49,7 +49,17 @@ final class DischargeCircuitOrchestrator {
         completion: @escaping Completion
     ) async {
         while circuitStore.isActive {
-            guard inventoryStore.consumeDischargePacket() else {
+            var didConsumePacket = inventoryStore.consumeDischargePacket()
+            if !didConsumePacket {
+                do {
+                    try await Task.sleep(for: .milliseconds(150))
+                } catch {
+                    return
+                }
+                didConsumePacket = inventoryStore.consumeDischargePacket()
+            }
+
+            guard didConsumePacket else {
                 finish(reason: .capacitorEmpty, completion: completion)
                 return
             }
@@ -58,6 +68,7 @@ final class DischargeCircuitOrchestrator {
             let duration = circuitStore.state.packetDuration
             let intensity = circuitStore.state.intensity
             var elapsed: TimeInterval = 0
+            var deliveredInPacket: Double = 0
             var previous = ContinuousClock.now
 
             while elapsed < duration, circuitStore.isActive {
@@ -72,9 +83,28 @@ final class DischargeCircuitOrchestrator {
                 previous = now
                 elapsed += delta
 
-                let deliveredAmount = delta / duration
+                let deliveredAmount = min(
+                    max(delta / duration, 0),
+                    1 - deliveredInPacket
+                )
+                deliveredInPacket += deliveredAmount
                 let result = delivery(deliveredAmount, intensity)
                 circuitStore.updatePacketProgress(elapsed / duration)
+
+                if result == .thresholdReached {
+                    finish(reason: .encounterThresholdReached, completion: completion)
+                    return
+                }
+            }
+
+            guard circuitStore.isActive else {
+                return
+            }
+
+            let remainingAmount = max(0, 1 - deliveredInPacket)
+            if remainingAmount > 0.000_001 {
+                let result = delivery(remainingAmount, intensity)
+                circuitStore.updatePacketProgress(1)
 
                 if result == .thresholdReached {
                     finish(reason: .encounterThresholdReached, completion: completion)

@@ -12,6 +12,7 @@ enum AppStrings {
     static let releasingCounterLabel = "RELEASING"
     static let agitatedCounterLabel = "AGITATED"
     static let resonanceCounterLabel = "RESONANCE"
+    static let integrityCounterLabel = "INTEGRITY"
     static let capacitorActionsTitle = "VEIL CAPACITOR"
     static let uploadActionTitle = "UPLOAD"
     static let uploadActionSubtitle = "RESEARCH"
@@ -19,6 +20,8 @@ enum AppStrings {
     static let containActionSubtitle = "TRANSFER TO CELL"
     static let dischargeActionTitle = "DISCHARGE"
     static let dischargeActionSubtitle = "RELEASE CHARGE"
+    static let overloadActionTitle = "OVERLOAD"
+    static let overloadActionSubtitle = "FULL CAP PULSE"
     static let stopDischargeActionTitle = "STOP"
     static let activeDischargeActionSubtitle = "CIRCUIT ACTIVE"
     static let closeCapacitorActionsAccessibilityLabel = "Close Capacitor actions"
@@ -28,7 +31,6 @@ enum AppStrings {
     static let containmentCellEmptyValue = "EMPTY"
     static let refillCapacitorLabel = "REFILL"
     static let overloadCapacitorLabel = "OVERLOAD"
-    static let activateContainmentCellAccessibilityLabel = "Activate Containment Cell"
     static let lockedStorageValue = "LOCKED"
     static let entitySignalLockedStatus = "ENTITY SIGNAL LOCKED"
     static let resonanceBeamEngagedStatus = "RESONANCE BEAM ENGAGED"
@@ -39,6 +41,12 @@ enum AppStrings {
     static let searchingAgitatedWispsStatus = "SEARCHING FOR AGITATED WISPS"
     static let passiveSearchStatus = "PASSIVE SEARCH"
     static let anomalyDetectedStatus = "ANOMALY DETECTED"
+    static let fearLabel = "FEAR"
+    static let resonanceBoltIncomingStatus = "RESONANCE BOLT INCOMING"
+    static let resonanceBoltDodgedStatus = "BOLT EVADED"
+    static let resonanceImpactStatus = "NEURAL FEEDBACK DETECTED"
+    static let neuralFeedbackLimitStatus = "NEURAL FEEDBACK LIMIT"
+    static let autoRecalibratingStatus = "SPECTRAL LENS AUTO-RECALIBRATING"
     static let veilogyThreatLevelLabel = "THREAT LEVEL"
     static let veilogyResearchStatusLabel = "RESEARCH STATUS"
 
@@ -79,6 +87,8 @@ enum AppStrings {
             return "Tracking agitated essence"
         case .minorSpecterManifested:
             return "Minor Specter manifested"
+        case .scannerFailsafe:
+            return "Scanner failsafe"
         case .unavailable:
             return scannerUnavailableTitle
         }
@@ -88,6 +98,8 @@ enum AppStrings {
         switch status {
         case .minorSpecterManifested:
             return minorSpecterHint
+        case .scannerFailsafe:
+            return autoRecalibratingStatus
         case .initializing, .scanning, .charged, .discharging, .hunting, .unavailable:
             return collectingHint
         }

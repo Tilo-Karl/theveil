@@ -95,13 +95,14 @@ They can be affected through Resonance, but they are classified through analysis
 11. Without an active Manifestation, the Resonance energy charges the shared local field. Five Essence-equivalent units and ten powered seconds summon the initial entity.
 12. Nearby wisps become agitated as a side effect of the growing Manifestation field. Extracting up to three is an optional ammunition opportunity, not the cause of the Manifestation.
 13. The Ghost Manifestation begins when the shared field reaches its required charge, regardless of how many Agitated Wisps were extracted.
-14. Establish Resonance Lock on the ghost. The Resonance Beam engages automatically, but combined beam Intensity must meet the entity's Threshold before powered Discharge can build Target Resonance.
-15. While sufficiently powered and locked, each two-second Essence packet adds Target Resonance toward the entity's Stability requirement. While unlocked or below Threshold, the same packet continues burning and is wasted.
-16. A prepared researcher may tap the always-visible Containment Cell control to refill the Capacitor.
-17. Once the Capacitor is full, tapping the Cell again injects its remaining charge above normal capacity. Capacitor Overload automatically amplifies the same Resonance Beam.
-18. When Target Resonance reaches the entity's Stability, the scanner reports that the entity has destabilized and dissipated.
-19. Ghost Essence separates from the dissolving Manifestation as small wisps, spirals into the scanner, and enters the Capacitor as Veil Essence carrying the ghost's spectral signature.
-20. Upload the Ghost Essence to advance entity research and expand Veilogy.
+14. Establish Resonance Lock on the ghost. The free Weak Resonance Beam engages automatically after full lock.
+15. During combat, tapping the Capacitor may fire a Discharge pulse or, if the Capacitor is full, a full Overload pulse. Both require an existing Resonance Lock.
+16. Discharge adds one Capacitor Essence to the free beam for each two-second pulse. Overload spends the full Capacitor in one two-second amplified pulse.
+17. The Containment Cell does not fire the beam directly. After the first combat Discharge or Overload, it feeds the Capacitor by one Essence every two seconds while reserve charge remains.
+18. Beam output damages Ectoplasmic Integrity according to `max(0, Output - Resonance Resistance)`.
+19. When Ectoplasmic Integrity reaches zero, the scanner reports that the entity has destabilized and dissipated.
+20. Ghost Essence separates from the dissolving Manifestation as small wisps, spirals into the scanner, and enters the Capacitor as Veil Essence carrying the ghost's spectral signature.
+21. Upload the Ghost Essence to advance entity research and expand Veilogy.
 
 The Society's early interpretation is incomplete. Researchers initially believe that making a ghost disappear is a successful resolution. Later research will reveal that some ghosts, including Lost Souls, should instead be helped through a Rift in the Veil. This discovery belongs to a later gameplay phase and should not be prematurely exposed by the Version 1 scanner.
 
@@ -132,103 +133,104 @@ Against wisps it:
 
 Against ghosts it:
 
-- Attempts to establish Resonance coupling.
-- Accepts timed Resonance power from Discharge.
-- Builds Target Resonance only while powered, locked, and at or above the entity's Threshold.
+- Attempts to destabilize the entity's ectoplasmic structure.
+- Applies one free Output `1` pulse every two seconds while full Resonance Lock is maintained.
+- Accepts additional timed Output from Capacitor Discharge or Overload.
+- Damages Ectoplasmic Integrity only when Output exceeds the entity's Resonance Resistance.
 - Applies an additional entity effect that remains to be designed. Phase anchoring is a candidate, but is not yet established gameplay.
 
 When contact is lost:
 
-- The active Essence packet continues burning.
-- Target Resonance receives no progress while unlocked.
-- Target Resonance pauses briefly and then slowly decays.
-- Reacquiring Resonance Lock reconnects whatever powered time remains.
+- The free beam stops applying useful pulse progress.
+- Any active Discharge pulse continues burning.
+- Any active Overload pulse continues burning.
+- Ectoplasmic Integrity receives no damage while unlocked.
+- Reacquiring Resonance Lock reconnects whatever powered pulse time remains.
 
-When combined Intensity is below Threshold:
+When Output does not exceed Resistance:
 
-- The beam cannot couple with the entity.
-- Target Resonance does not increase.
+- The beam cannot degrade the entity's ectoplasmic structure.
+- Ectoplasmic Integrity does not decrease.
 - No research data or evidence is collected.
-- Discharged Essence is still consumed and wasted.
-- The scanner may report `INSUFFICIENT RESONANCE INTENSITY` as equipment feedback only.
+- Discharged or Overloaded Essence is still consumed and wasted.
+- The scanner may report `INSUFFICIENT RESONANCE OUTPUT` as equipment feedback only.
 
 ## Entity Resonance Profile
 
 Every entity is defined by two shared combat values:
 
-- **Threshold:** the minimum combined beam Intensity required to affect it.
-- **Stability:** the total Target Resonance that must accumulate before the entity destabilizes.
+- **Ectoplasmic Integrity:** the total structural damage required before the entity dissipates.
+- **Resonance Resistance:** the amount of beam Output absorbed by the entity each two-second pulse.
 
 Initial design examples:
 
-| Entity | Threshold | Stability |
+| Entity | Ectoplasmic Integrity | Resonance Resistance |
 | --- | ---: | ---: |
-| Will-o'-the-Wisp | 1 | 1 |
-| Lost Soul | 1 | 5 |
-| Revenant | 2 | 12 |
-| Wraith | 3 | 20 |
+| Will-o'-the-Wisp | 1 | 0 |
+| Minor Specter | 10 | 0 |
+| Revenant | 12 | 1 |
+| Wraith | 20 | 2 |
 
 Beam output:
 
-- Normal Mk I output has Intensity `1`, consumes one Essence per two seconds, and adds one Target Resonance per two seconds.
-- Mk I Capacitor Overload has Intensity `2`, consumes one Essence per second, and adds one Target Resonance per second.
-- At Intensity `I`, one Essence packet lasts `2 / I` seconds and contributes one Target Resonance when fully coupled.
-- With perfect lock and sufficient Intensity, total Essence required equals entity Stability.
-- Higher Intensity spends the same total Essence faster; it does not make the encounter cheaper.
-- Multiple players add their current beam Intensities together against the shared Threshold.
-- Multiple sufficiently coupled beams add their Target Resonance rates together.
+- Weak Resonance Beam Output: `1` every two seconds.
+- Discharge Output: Weak Beam `1` + Capacitor Essence `1` = `2` every two seconds.
+- Full Mk I Overload Output at `5/5`: Weak Beam `1` + Capacitor `5` = `6` over one two-second pulse.
+- Damage per two-second pulse is `max(0, Output - Resonance Resistance)`.
+- Multiple players add their current Output against the same shared entity state.
+- Future scanner upgrades may increase Capacitor capacity, Cell capacity, maximum Output, recharge speed, or pulse behaviour without changing the core formula.
 
 Examples:
 
-- Lost Soul with normal Intensity `1`: five Essence over ten seconds.
-- Lost Soul with overload Intensity `2`: five Essence over five seconds.
-- Revenant with normal Intensity `1`: no effect because Threshold `2` is not met.
-- Revenant with overload Intensity `2`: twelve Essence over twelve seconds.
-- Wraith requires combined Intensity `3`: three normal beams, one normal plus one overload, two overload beams, or future equipment capable of Intensity `3`.
+- Minor Specter Resistance `0`: the free beam deals `1` damage every two seconds.
+- Minor Specter with Discharge: Output `2`, Resistance `0`, so two damage every two seconds.
+- Minor Specter with full Overload: Output `6`, Resistance `0`, so six damage over two seconds.
+- Revenant Resistance `1`: the free beam deals no damage, but Discharge deals one damage every two seconds.
+- Wraith Resistance `2`: Discharge deals no damage; it requires Overload, multiple players, or upgraded equipment.
 
 The Will-o'-the-Wisp is the resource bootstrap exception. Its own spectral energy supplies the Level 1 extraction process, so the free automatic Resonance Beam can destabilize it over two seconds without consuming Capacitor Essence.
 
-Scanner progression increases maximum Resonance Intensity rather than introducing unrelated weapons:
+Scanner progression increases resonance output rather than introducing unrelated weapons:
 
-- Mk I Scanner: maximum Intensity `2`.
-- Mk II Scanner: maximum Intensity `3`.
-- Mk III Scanner: maximum Intensity `4`.
+- Mk I Scanner: Weak Beam, Discharge, and `5/5` Overload.
+- Mk II Scanner: higher Capacitor capacity and stronger Overload output.
+- Mk III Scanner: improved Cell feed, larger reserve storage, or higher base beam output.
 
 The exact values remain subject to device and multiplayer playtesting.
 
 ## Universal Discharge Circuit
 
-Discharge has one mechanical meaning everywhere: convert personal Capacitor Essence into timed Resonance power.
+Discharge has one mechanical meaning everywhere: add Capacitor Essence to an existing resonance process.
 
 - The first tap starts Discharge.
-- At normal Intensity `1`, one Essence is committed immediately and provides up to two seconds of power.
-- At the end of each packet, another Essence is committed automatically while Discharge remains active.
+- One Capacitor Essence is committed immediately.
+- Each committed Essence provides a two-second Discharge pulse.
+- During combat, Discharge requires an existing Resonance Lock.
 - A second tap stops Discharge.
-- Stopping midway through a packet wastes its remaining potential; consumed Essence is never refunded.
+- Stopping midway through a pulse wastes its remaining potential; consumed Essence is never refunded.
 - Discharge stops automatically when the Capacitor empties.
 - The UI control alternates between `DISCHARGE` and `STOP`.
 
 Power is routed according to encounter state:
 
 - No active Manifestation: power charges the shared local Manifestation field.
-- Active Manifestation with Resonance Lock and sufficient combined Intensity: power builds Target Resonance.
-- Active Manifestation with Resonance Lock below Threshold: power is consumed without effect.
-- Active Manifestation without Resonance Lock: power is discharged but reaches no target.
+- Active Manifestation with Resonance Lock: power adds to the Weak Beam and damages Ectoplasmic Integrity according to Resistance.
+- Active Manifestation without Resonance Lock: Discharge is blocked in the current prototype to avoid unclear waste.
+- If Output cannot overcome Resistance, Discharge is consumed without effect.
 
 ## Capacitor Overload
 
-The integrated Cell is both reserve ammunition and an overload amplifier.
+Overload is a Capacitor firing mode, not a Cell action.
 
-When the Cell is tapped:
-
-- If the Capacitor is below capacity, the Cell transfers only enough Essence to refill it. Any unused Cell charge remains stored.
-- If the Capacitor is already full, the Cell injects all its remaining charge above normal capacity.
-- The Capacitor visibly reads from `6/5` through `10/5`, depending on stored Cell charge.
-- Capacitor Overload occurs automatically and amplifies the active Resonance Beam.
-- Mk I Overload raises Intensity from `1` to `2`, shortens each Essence packet from two seconds to one, and therefore consumes two Essence per two seconds.
-- Overload delivers the same total Resonance per Essence in half the time.
-- A `10/5` overload sustains amplified output longer than a `6/5` overload; scanner hardware determines maximum Intensity.
-- The same rules apply to future equipment with larger Capacitor and Cell capacities.
+- Overload is available only when the Capacitor is full.
+- During combat, Overload requires an existing Resonance Lock.
+- Overload consumes the entire current Capacitor charge at once.
+- With a Mk I `5/5` Capacitor, Overload Output is `6`: Weak Beam `1` plus Capacitor `5`.
+- Overload lasts one two-second resonance pulse.
+- Overload must not clear Resonance Lock.
+- After Overload, the Capacitor becomes `0/5`.
+- The Containment Cell may begin feeding reserve Essence back into the Capacitor after Overload.
+- Future equipment may increase Capacitor capacity, making Overload larger without changing the control model.
 
 The exact balance of overload strength remains subject to device playtesting.
 
@@ -236,13 +238,14 @@ The exact balance of overload strength remains subject to device playtesting.
 
 ## Veil Capacitor
 
-The Veil Capacitor is volatile, temporary scanner storage.
+The Veil Capacitor is short-term scanner storage, but it persists across app relaunches so transfer between the Capacitor and Cell remains reversible and mechanically honest.
 
 - Initial capacity: **5 Veil Essence**.
-- Future scanner upgrades may increase capacity without changing the reload and overload rules.
+- Future scanner upgrades may increase capacity without changing the transfer and overload rules.
 - Every extracted calm or agitated wisp adds one Essence.
-- Contents are lost if the app closes.
+- Contents survive app relaunches.
 - Tapping the Capacitor opens **UPLOAD**, **CONTAIN**, and **DISCHARGE**.
+- During combat, the same Capacitor panel also exposes **OVERLOAD** when the Capacitor is full and Resonance Lock is established.
 
 The Capacitor may be operated before it is full. The consequences remain mechanically honest.
 
@@ -270,13 +273,23 @@ The offline prototype may represent Society uploads locally until a backend exis
 Discharge opens and closes the Universal Discharge Circuit.
 
 - At `0/5`, the scanner cannot begin Discharge.
-- Each Essence is consumed at the beginning of its packet. Packet duration is `2 / Intensity` seconds: two seconds normally and one second during Mk I Overload.
-- Packets continue automatically until the player taps `STOP` or the Capacitor empties.
-- A packet may contribute fully, partially, or not at all depending on how long useful contact is maintained.
-- Any unused time from an interrupted packet is wasted.
-- Without a Manifestation, useful packet time contributes to shared Manifestation Field Charge.
-- During a Manifestation, useful locked packet time contributes to Target Resonance.
-- During a Manifestation without lock, the packet is wasted.
+- Each Essence is consumed at the beginning of its two-second pulse.
+- Pulses continue automatically until the player taps `STOP` or the Capacitor empties.
+- A pulse may contribute fully, partially, or not at all depending on how long useful contact is maintained.
+- Any unused time from an interrupted pulse is wasted.
+- Without a Manifestation, useful pulse time contributes to shared Manifestation Field Charge.
+- During a Manifestation, Discharge requires Resonance Lock and adds Capacitor Output to the Weak Beam.
+
+### Overload
+
+Overload spends the full Capacitor in one amplified two-second pulse.
+
+- Requires a full Capacitor.
+- Requires Resonance Lock during combat.
+- Consumes the entire Capacitor immediately.
+- Does not clear Resonance Lock.
+- Applies Output equal to Weak Beam `1` plus the consumed Capacitor charge.
+- Refilling after Overload comes from collecting more wisps or from an armed Containment Cell feed.
 
 ## Containment Cell
 
@@ -289,9 +302,12 @@ A Containment Cell is persistent long-term storage for identified Veil Essence.
 - Charge survives app relaunches.
 - Contain transfers Capacitor Essence into it.
 - The Cell is always visible on the scanner HUD after it is unlocked.
-- Tapping it while the Capacitor is below capacity reloads only the missing charge.
-- Tapping it while the Capacitor is full injects all remaining Cell charge and begins Capacitor Overload.
-- A Cell may be operated at any time. An overload without a useful target still consumes its charge.
+- The Cell does not directly fire the beam.
+- The Cell does not directly trigger Overload.
+- The Cell begins feeding the Capacitor only after the player starts combat Discharge or Overload.
+- Feed rate target: one Essence every two seconds while the Manifestation remains active.
+- Feed stops when the Cell empties or the encounter ends.
+- Contain can transfer remaining Capacitor charge back into the Cell after combat.
 
 Additional Cells, Cell types, and equipment expansion are deferred.
 
@@ -389,36 +405,48 @@ The first Manifestation is initially displayed as `UNKNOWN ENTITY`.
 
 Maintaining Resonance:
 
-- Builds shared Target Resonance.
+- Damages shared Ectoplasmic Integrity according to Output and Resistance.
 - Applies an additional entity effect that remains to be designed.
-- Allows prepared players to reload the Capacitor and deliberately trigger Capacitor Overload.
-- Slowly loses Target Resonance when powered lock is lost instead of resetting instantly.
+- Allows prepared players to fire Discharge or deliberately trigger Capacitor Overload.
+- Stops applying useful damage when Resonance Lock is lost.
 
-When Target Resonance reaches the entity's Stability, the Version 1 scanner believes the entity has been successfully destabilized. The entity dissipates and releases Ghost Essence carrying its spectral signature.
+When Ectoplasmic Integrity reaches zero, the Version 1 scanner believes the entity has been successfully destabilized. The entity dissipates and releases Ghost Essence carrying its spectral signature.
 
-The Manifestation system must remain entity-agnostic. The Lost Soul is currently the only implemented ghost because other ghosts have not been designed. A future encounter may select among multiple possible ghost types without replacing the shared Resonance mechanics.
+The Manifestation system must remain entity-agnostic. The Minor Specter is the initial implemented hostile Manifestation. A future encounter may select among multiple entity types without replacing the shared Resonance mechanics.
 
-## Current Lost Soul Prototype
+## Current Minor Specter Prototype
 
-The currently implemented Lost Soul:
+The currently implemented Minor Specter:
 
-- [x] Has a procedural translucent human silhouette.
-- [x] Drifts slowly and aimlessly.
-- [x] Periodically pauses, turns, and looks around.
-- [x] Shimmers, nearly disappears, and returns.
-- [x] Initially ignores the player.
-- [x] Notices and faces the player after the current one-second reticle lock.
-- [ ] Notices and faces the player in response to Resonance Beam contact rather than the reticle alone.
-- [x] Leans back, dissolves, and sinks into a detected surface.
-- [x] Emerges from another real detected surface when a route exists.
-- [ ] Uses the Version 1 Resonance Lock and Target Resonance system.
-- [ ] Responds to the Resonance Beam with the chosen entity-specific effect.
-- [ ] Responds to Capacitor Overload according to overload magnitude.
-- [ ] Slowly loses Target Resonance when powered lock is interrupted.
-- [ ] Dissipates when Target Resonance reaches its Stability requirement.
-- [ ] Dissolves into small Ghost Essence wisps that spiral into the scanner.
+- [x] Has a procedural unstable plasma body with an intermittently emerging face.
+- [x] Roams and repositions within a localized area.
+- [x] Turns toward the investigator during combat.
+- [x] Telegraphs an attack by condensing and brightening its plasma while its face emerges.
+- [x] Fires a distinct world-space Resonance Bolt toward the investigator's position at launch.
+- [x] Uses non-homing bolts so physical camera movement can evade an attack.
+- [x] Produces separate incoming, impact, and successful-dodge feedback.
+- [x] Increases investigator Fear when a Resonance Bolt hits.
+- [x] Displays Fear on the scanner HUD.
+- [x] Triggers a scanner failsafe when Fear reaches its limit.
+- [x] Ends the encounter immediately when the failsafe triggers; the Specter escapes and releases no collectible residue.
+- [x] Shows a fractured spectral lens and disables scanner operation during automatic recalibration.
+- [x] Returns to a fresh investigation after recalibration.
+- [x] Uses the shared Resonance Lock and Ectoplasmic Integrity damage system.
+- [x] Responds to Weak Beam, Capacitor Discharge, and Overload according to Resonance Resistance.
+- [ ] Dissipates into collectible ectoplasmic residue when successfully destabilized.
 
-The current notice-and-surface-escape behaviour may remain part of the encounter, but it must no longer be the complete ghost resolution.
+Current combat tuning targets are a 1.1-second attack telegraph, a variable 3.2-to-4.8-second attack interval, and scanner failure after three direct Resonance Bolt hits. These values remain subject to device playtesting.
+
+## Fear Failure
+
+Fear represents dangerous neural feedback caused by direct exposure to hostile spectral resonance. At maximum Fear:
+
+- Resonance Lock and active beam contact collapse.
+- The scanner's spectral lens visibly fractures and enters failsafe.
+- The hostile Manifestation escapes immediately rather than waiting for recovery.
+- The failed encounter produces no Ghost Essence, ectoplasm, research sample, or other reward.
+- Scanner controls remain disabled during a seven-second automatic recalibration.
+- Recalibration starts a fresh investigation without restoring the failed encounter.
 
 # Ghost Essence, Ectoplasm, And Ghost Research
 
@@ -548,11 +576,11 @@ The player should feel like they are operating real paranormal field equipment r
    - [x] Present the automatic extraction explicitly as the Resonance Beam.
    - [x] Require a further two seconds of maintained powered lock before extraction completes.
 7. **Research and field decisions**
-   - [x] Tapping the Capacitor presents Upload, Contain, and Discharge.
+   - [x] Tapping the Capacitor presents Upload, Contain, Discharge, and Overload.
    - [x] Upload research updates Veilogy.
    - [x] Contain transfers charge into the integrated Cell.
    - [x] Make Discharge a start/stop control that consumes one Essence per two-second packet.
-   - [x] Route useful Discharge time into Manifestation Field Charge or Target Resonance.
+   - [x] Route useful Discharge time into Manifestation Field Charge or Ectoplasmic Integrity damage.
 
 # Current Prototype Status
 
@@ -572,16 +600,17 @@ The player should feel like they are operating real paranormal field equipment r
 ## Resource Flow
 
 - [x] Five calm Essence fill the Capacitor.
-- [x] Tapping the Capacitor presents Upload, Contain, and Discharge.
+- [x] Tapping the Capacitor presents Upload, Contain, Discharge, and Overload.
 - [x] Upload consumes the current charge and persistently advances research.
 - [x] Identifying the Will-o'-the-Wisp unlocks one integrated rechargeable Cell.
 - [x] Legacy crafted Cell inventory migrates honestly into the integrated Cell.
 - [x] Contain transfers identified Essence into persistent Cell charge.
 - [x] All three Capacitor actions are available at partial charge during calm search.
-- [x] The integrated Cell is visible and directly operable from the main scanner HUD.
-- [x] Cell activation below `5/5` refills only the Capacitor deficit and preserves unused Cell charge.
-- [x] Cell activation at `5/5` creates temporary `6/5` through `10/5` overcapacity.
-- [x] Overcapacity visibly drains through a beam presentation whose magnitude scales with excess charge.
+- [x] The integrated Cell is visible from the main scanner HUD as reserve storage.
+- [x] Combat Discharge or Overload arms the Cell feed.
+- [x] Armed Cell feed transfers one Essence into the Capacitor every two seconds while the Manifestation remains active.
+- [x] Temporary `6/5` through `10/5` overcapacity removed from the combat model.
+- [x] Full-Capacitor Overload visibly fires a two-second amplified beam presentation.
 - [x] Capacitor and Cell capacities come from an equipment configuration that can support future upgrades.
 - [x] Replace all-at-once Discharge with the universal two-second packet circuit.
 - [x] Add encounter-owned Manifestation Field Charge with a configurable requirement.
@@ -621,12 +650,12 @@ Intended encounter model:
 
 - Nearby players may join an active investigation without bringing mandatory resources.
 - Every player owns their Capacitor, Containment Cell, Resonance Lock, active Discharge packet, and Beam connection.
-- Manifestation Field Charge, its required charge, encounter phase, and Target Resonance belong to the shared encounter.
+- Manifestation Field Charge, its required charge, encounter phase, and Ectoplasmic Integrity belong to the shared encounter.
 - Every player may contribute timed Discharge power to the same Manifestation field.
 - Simultaneous useful Beam time adds to Field Charge concurrently and reduces real summoning time.
 - Initial entities may require `5` shared units; tougher future entities may require `10`, `20`, or more.
-- During a Manifestation, every locked powered Beam contributes to the same Target Resonance.
-- Target Resonance is shared encounter progress.
+- During a Manifestation, every locked powered Beam contributes to the same Ectoplasmic Integrity damage model.
+- Ectoplasmic Integrity is shared encounter progress.
 - Equipment and stored resources remain player-specific.
 
 Architecture should move toward:
@@ -645,7 +674,7 @@ Implementation:
 - [x] Introduce local encounter-owned Field Charge before networking it.
 - [ ] Define shared encounter events.
 - [ ] Define nearby-session discovery and world alignment.
-- [ ] Synchronize Target Resonance and entity state.
+- [ ] Synchronize Ectoplasmic Integrity and entity state.
 - [ ] Handle joining, leaving, interruption, and host migration.
 
 # Version 1 Scope

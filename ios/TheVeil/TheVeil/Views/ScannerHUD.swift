@@ -6,21 +6,22 @@ struct ScannerHUD: View {
     @ObservedObject var inventoryStore: EssenceInventoryStore
     @ObservedObject var encounterStore: ManifestationEncounterStore
     let capacitorAction: () -> Void
-    let containmentCellAction: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             header
             HStack {
+                if viewModel.gameplayPhase == .manifestation || viewModel.scannerFailsafeStartedAt != nil {
+                    FearIndicator(
+                        fear: viewModel.fearLevel,
+                        capacity: viewModel.fearCapacity
+                    )
+                }
                 Spacer()
                 ContainmentCellHUDControl(
                     cellCharge: inventoryStore.containmentCellEssenceCount,
                     cellCapacity: inventoryStore.equipment.containmentCellCapacity,
-                    capacitorCharge: inventoryStore.capacitorEssenceCount,
-                    capacitorCapacity: inventoryStore.equipment.capacitorCapacity,
-                    isUnlocked: inventoryStore.isIntegratedCellUnlocked,
-                    isEnabled: viewModel.canActivateContainmentCell,
-                    action: containmentCellAction
+                    isUnlocked: inventoryStore.isIntegratedCellUnlocked
                 )
             }
             .padding(.top, 6)
@@ -155,6 +156,10 @@ struct ScannerHUD: View {
     }
 
     private var signalStatusText: String {
+        if viewModel.scannerFailsafeStartedAt != nil {
+            return AppStrings.autoRecalibratingStatus
+        }
+
         if let notice = viewModel.scannerNotice {
             return AppStrings.scannerNoticeStatus(notice)
         }
@@ -214,6 +219,54 @@ struct ScannerHUD: View {
         inventoryStore.capacitorEssenceCount > inventoryStore.equipment.capacitorCapacity
             ? Color(red: 1, green: 0.45, blue: 0.24)
             : accentColor
+    }
+}
+
+private struct FearIndicator: View {
+    let fear: Int
+    let capacity: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.caption2.weight(.semibold))
+                Text(AppStrings.fearLabel)
+                    .font(.caption2.monospaced().weight(.semibold))
+                Text("\(fear) / \(capacity)")
+                    .font(.caption2.monospacedDigit().weight(.medium))
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.12))
+                    Capsule()
+                        .fill(fearColor)
+                        .frame(width: geometry.size.width * fearFraction)
+                }
+            }
+            .frame(width: 112, height: 3)
+        }
+        .foregroundStyle(fearColor)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.58))
+        .overlay {
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(fearColor.opacity(0.4), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    private var fearFraction: CGFloat {
+        guard capacity > 0 else { return 0 }
+        return min(max(CGFloat(fear) / CGFloat(capacity), 0), 1)
+    }
+
+    private var fearColor: Color {
+        fearFraction >= 0.67
+            ? Color(red: 1, green: 0.22, blue: 0.28)
+            : Color(red: 0.82, green: 0.32, blue: 1)
     }
 }
 

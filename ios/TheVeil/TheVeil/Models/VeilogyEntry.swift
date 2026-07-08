@@ -129,7 +129,7 @@ struct VeilogyEntry: Identifiable {
             ),
             VeilogySection(
                 title: "VEILOLOGY MEASUREMENTS",
-                body: "Dominant Resonance Frequency\n18.6 kHz (varies between individuals)\n\nEctoplasmic Integrity\n100\n\nResonance Resistance\n10%"
+                body: "Dominant Resonance Frequency\n18.6 kHz (varies between individuals)\n\nEctoplasmic Integrity\n10\n\nResonance Resistance\n0"
             ),
             VeilogySection(
                 title: "FIELD NOTES",

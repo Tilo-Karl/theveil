@@ -39,7 +39,7 @@ final class SpecterVFXFactory {
         let innerPlasma = makeBodyLayer(
             mesh: bodyMesh,
             baseMaterial: bodyMaterial,
-            controls: SIMD4<Float>(phase + 0.33, 1, 1.35, 0.65),
+            controls: SIMD4<Float>(phase + 0.33, 0, 1.35, 0.65),
             scale: 0.95
         )
 

@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class ManifestationEncounterStore: ObservableObject {
     @Published private(set) var state: ManifestationEncounterState
+    private let completionTolerance = 0.001
 
     init(state: ManifestationEncounterState = .initial()) {
         self.state = state
@@ -24,8 +25,13 @@ final class ManifestationEncounterStore: ObservableObject {
         return min(state.fieldCharge / state.requiredFieldCharge, 1)
     }
 
-    var targetResonance: Double {
-        state.targetResonance
+    var isFieldReadyForManifestation: Bool {
+        state.phase == .resupply
+            || state.fieldCharge + completionTolerance >= state.requiredFieldCharge
+    }
+
+    var ectoplasmicDamage: Double {
+        state.ectoplasmicDamage
     }
 
     func contributeFieldCharge(_ amount: Double) -> EncounterResonanceResult {
@@ -33,20 +39,32 @@ final class ManifestationEncounterStore: ObservableObject {
             return .noEffect
         }
 
-        state.fieldCharge = min(
+        let nextFieldCharge = min(
             state.fieldCharge + amount,
             state.requiredFieldCharge
         )
+        state.fieldCharge = nextFieldCharge
 
-        guard state.fieldCharge >= state.requiredFieldCharge else {
+        guard isFieldReadyForManifestation else {
             return .progressed(
                 current: state.fieldCharge,
                 required: state.requiredFieldCharge
             )
         }
 
+        state.fieldCharge = state.requiredFieldCharge
         state.phase = .resupply
         return .thresholdReached
+    }
+
+    func completeFieldChargeIfReady() -> Bool {
+        guard state.phase == .chargingField, isFieldReadyForManifestation else {
+            return state.phase == .resupply
+        }
+
+        state.fieldCharge = state.requiredFieldCharge
+        state.phase = .resupply
+        return true
     }
 
     func beginManifestation(profile: EntityResonanceProfile) {
@@ -55,31 +73,39 @@ final class ManifestationEncounterStore: ObservableObject {
         }
         state.phase = .manifested
         state.entityProfile = profile
-        state.targetResonance = 0
+        state.ectoplasmicDamage = 0
     }
 
-    func contributeTargetResonance(
-        _ amount: Double,
-        combinedIntensity: Int
+    func applyResonanceOutput(
+        output: Double,
+        pulseFraction: Double
     ) -> EncounterResonanceResult {
+        let clampedFraction = min(max(pulseFraction, 0), 1)
         guard
-            amount > 0,
+            clampedFraction > 0,
             state.phase == .manifested,
-            let profile = state.entityProfile,
-            combinedIntensity >= profile.threshold
+            let profile = state.entityProfile
         else {
             return .noEffect
         }
 
-        state.targetResonance = min(
-            state.targetResonance + amount,
-            profile.stability
+        let damagePerPulse = max(0, output - profile.resonanceResistance)
+        guard damagePerPulse > 0 else {
+            return .insufficientOutput(
+                output: output,
+                resistance: profile.resonanceResistance
+            )
+        }
+
+        state.ectoplasmicDamage = min(
+            state.ectoplasmicDamage + damagePerPulse * clampedFraction,
+            profile.ectoplasmicIntegrity
         )
 
-        guard state.targetResonance >= profile.stability else {
+        guard state.ectoplasmicDamage >= profile.ectoplasmicIntegrity else {
             return .progressed(
-                current: state.targetResonance,
-                required: profile.stability
+                current: state.ectoplasmicDamage,
+                required: profile.ectoplasmicIntegrity
             )
         }
 
@@ -87,11 +113,18 @@ final class ManifestationEncounterStore: ObservableObject {
         return .thresholdReached
     }
 
-    func decayTargetResonance(_ amount: Double) {
+    func decayEctoplasmicDamage(_ amount: Double) {
         guard amount > 0, state.phase == .manifested else {
             return
         }
-        state.targetResonance = max(0, state.targetResonance - amount)
+        state.ectoplasmicDamage = max(0, state.ectoplasmicDamage - amount)
+    }
+
+    func endManifestationAsEscaped() {
+        guard state.phase == .manifested else {
+            return
+        }
+        state.phase = .escaped
     }
 
     func reset(requiredFieldCharge: Double = 5) {

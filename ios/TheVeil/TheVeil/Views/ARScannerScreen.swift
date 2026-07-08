@@ -11,7 +11,7 @@ struct ARScannerScreen: View {
             ARScannerView(viewModel: viewModel)
                 .ignoresSafeArea()
 
-            if viewModel.isScannerActive {
+            if viewModel.isScannerOperational {
                 ScannerReticle(
                     progress: viewModel.lockOnProgress,
                     beamProgress: viewModel.resonanceBeamProgress,
@@ -31,10 +31,6 @@ struct ARScannerScreen: View {
                 capacitorAction: {
                     guard viewModel.canOperateCapacitor else { return }
                     isCapacitorActionsPresented.toggle()
-                },
-                containmentCellAction: {
-                    isCapacitorActionsPresented = false
-                    viewModel.activateContainmentCell()
                 }
             )
             .opacity(viewModel.startupPhase == .booting ? 0 : Double(viewModel.lensIntensity))
@@ -47,6 +43,16 @@ struct ARScannerScreen: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
+            if
+                let feedback = viewModel.combatFeedback,
+                feedback != .scannerFailsafe
+            {
+                SpecterCombatFeedbackOverlay(feedback: feedback)
+                    .id(viewModel.combatFeedbackEventCounter)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             if isCapacitorActionsPresented, viewModel.canOperateCapacitor {
                 VStack {
                     Spacer()
@@ -56,6 +62,8 @@ struct ARScannerScreen: View {
                         capacitorCharge: viewModel.inventoryStore.capacitorEssenceCount,
                         capacitorCapacity: viewModel.inventoryStore.equipment.capacitorCapacity,
                         storageActionsEnabled: viewModel.canManageCapacitorStorage,
+                        dischargeEnabled: viewModel.canDischargeCapacitor,
+                        overloadEnabled: viewModel.canOverloadCapacitor,
                         uploadAction: {
                             isCapacitorActionsPresented = false
                             viewModel.uploadCapacitorEssence()
@@ -71,6 +79,10 @@ struct ARScannerScreen: View {
                                 isCapacitorActionsPresented = false
                             }
                         },
+                        overloadAction: {
+                            isCapacitorActionsPresented = false
+                            viewModel.overloadCapacitor()
+                        },
                         closeAction: {
                             isCapacitorActionsPresented = false
                         }
@@ -80,7 +92,7 @@ struct ARScannerScreen: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.94)))
             }
 
-            if viewModel.isScannerActive {
+            if viewModel.isScannerOperational {
                 Button {
                     isDeviceMenuPresented = true
                 } label: {
@@ -117,6 +129,15 @@ struct ARScannerScreen: View {
                     peakCharge: viewModel.megaBeamPeakCharge,
                     capacitorCapacity: viewModel.inventoryStore.equipment.capacitorCapacity,
                     intensity: viewModel.megaBeamIntensity
+                )
+                .allowsHitTesting(false)
+            }
+
+
+            if let failsafeStartedAt = viewModel.scannerFailsafeStartedAt {
+                ScannerFailsafeOverlay(
+                    startedAt: failsafeStartedAt,
+                    duration: viewModel.scannerFailsafeDuration
                 )
                 .allowsHitTesting(false)
             }
@@ -188,6 +209,12 @@ struct ARScannerScreen: View {
                 audioController.playMegaResonanceBeam(intensity: viewModel.megaBeamIntensity)
             }
         }
+        .onChange(of: viewModel.combatFeedbackEventCounter) { _, eventCount in
+            guard eventCount > 0, let feedback = viewModel.combatFeedback else {
+                return
+            }
+            audioController.playSpecterCombatFeedback(feedback)
+        }
         .onDisappear {
             audioController.stop()
         }
@@ -197,6 +224,148 @@ struct ARScannerScreen: View {
                 researchStore: viewModel.researchStore
             )
         }
+    }
+}
+
+private struct SpecterCombatFeedbackOverlay: View {
+    let feedback: SpecterCombatFeedback
+
+    var body: some View {
+        ZStack {
+            if feedback == .hit {
+                Color.red.opacity(0.14)
+                    .ignoresSafeArea()
+            }
+
+            VStack(spacing: 5) {
+                Image(systemName: iconName)
+                    .font(.title2.weight(.light))
+                Text(statusText)
+                    .font(.caption.monospaced().weight(.bold))
+            }
+            .foregroundStyle(accentColor)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+            .background(Color.black.opacity(0.72))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(accentColor.opacity(0.65), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 250)
+        }
+    }
+
+    private var statusText: String {
+        switch feedback {
+        case .incoming:
+            AppStrings.resonanceBoltIncomingStatus
+        case .hit:
+            AppStrings.resonanceImpactStatus
+        case .dodged:
+            AppStrings.resonanceBoltDodgedStatus
+        case .scannerFailsafe:
+            AppStrings.neuralFeedbackLimitStatus
+        }
+    }
+
+    private var iconName: String {
+        switch feedback {
+        case .incoming:
+            "bolt.trianglebadge.exclamationmark"
+        case .hit:
+            "waveform.path.ecg"
+        case .dodged:
+            "figure.run"
+        case .scannerFailsafe:
+            "exclamationmark.triangle"
+        }
+    }
+
+    private var accentColor: Color {
+        switch feedback {
+        case .incoming:
+            Color(red: 0.86, green: 0.42, blue: 1)
+        case .hit, .scannerFailsafe:
+            Color(red: 1, green: 0.3, blue: 0.34)
+        case .dodged:
+            .cyan
+        }
+    }
+}
+
+private struct ScannerFailsafeOverlay: View {
+    let startedAt: Date
+    let duration: TimeInterval
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+            let elapsed = timeline.date.timeIntervalSince(startedAt)
+            let remaining = max(Int(ceil(duration - elapsed)), 0)
+
+            ZStack {
+                Color.black.opacity(0.48)
+                    .ignoresSafeArea()
+
+                FracturedLensPattern()
+                    .stroke(Color.white.opacity(0.48), lineWidth: 1.2)
+                    .shadow(color: .cyan.opacity(0.38), radius: 2)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 10) {
+                    Image(systemName: "waveform.path.ecg.rectangle")
+                        .font(.largeTitle.weight(.light))
+                    Text(AppStrings.neuralFeedbackLimitStatus)
+                        .font(.headline.monospaced().weight(.bold))
+                    Text(AppStrings.autoRecalibratingStatus)
+                        .font(.caption.monospaced())
+                    Text("T-\(remaining)")
+                        .font(.title3.monospacedDigit().weight(.medium))
+                }
+                .foregroundStyle(Color(red: 1, green: 0.34, blue: 0.38))
+                .padding(.horizontal, 26)
+                .padding(.vertical, 20)
+                .background(Color.black.opacity(0.82))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.red.opacity(0.7), lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+    }
+}
+
+private struct FracturedLensPattern: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX * 1.08, y: rect.midY * 0.84)
+        let endpoints = [
+            CGPoint(x: rect.minX, y: rect.height * 0.18),
+            CGPoint(x: rect.width * 0.26, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.height * 0.12),
+            CGPoint(x: rect.maxX, y: rect.height * 0.58),
+            CGPoint(x: rect.width * 0.72, y: rect.maxY),
+            CGPoint(x: rect.width * 0.18, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.height * 0.68)
+        ]
+        var path = Path()
+
+        for (index, endpoint) in endpoints.enumerated() {
+            path.move(to: center)
+            let bend = CGPoint(
+                x: center.x + (endpoint.x - center.x) * 0.42 + (index.isMultiple(of: 2) ? 18 : -14),
+                y: center.y + (endpoint.y - center.y) * 0.38
+            )
+            path.addLine(to: bend)
+            path.addLine(to: endpoint)
+        }
+
+        path.move(to: CGPoint(x: center.x - 14, y: center.y - 8))
+        path.addLine(to: CGPoint(x: center.x + 28, y: center.y - 34))
+        path.addLine(to: CGPoint(x: center.x + 42, y: center.y + 12))
+        path.addLine(to: CGPoint(x: center.x - 6, y: center.y + 31))
+        return path
     }
 }
 

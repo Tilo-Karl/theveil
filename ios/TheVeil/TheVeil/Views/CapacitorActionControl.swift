@@ -7,9 +7,12 @@ struct CapacitorActionControl: View {
     let capacitorCharge: Int
     let capacitorCapacity: Int
     let storageActionsEnabled: Bool
+    let dischargeEnabled: Bool
+    let overloadEnabled: Bool
     let uploadAction: () -> Void
     let containAction: () -> Void
     let dischargeAction: () -> Void
+    let overloadAction: () -> Void
     let closeAction: () -> Void
 
     var body: some View {
@@ -89,7 +92,13 @@ struct CapacitorActionControl: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8)
+            ],
+            spacing: 8
+        ) {
             choiceButton(
                 title: AppStrings.uploadActionTitle,
                 subtitle: AppStrings.uploadActionSubtitle,
@@ -119,8 +128,17 @@ struct CapacitorActionControl: View {
                     ? "stop.fill"
                     : "bolt.trianglebadge.exclamationmark.fill",
                 accent: Color(red: 0.72, green: 0.3, blue: 1),
-                isEnabled: dischargeCircuitStore.isActive || capacitorCharge > 0,
+                isEnabled: dischargeEnabled,
                 action: dischargeAction
+            )
+
+            choiceButton(
+                title: AppStrings.overloadActionTitle,
+                subtitle: AppStrings.overloadActionSubtitle,
+                systemImage: "bolt.fill",
+                accent: Color(red: 1, green: 0.45, blue: 0.24),
+                isEnabled: overloadEnabled,
+                action: overloadAction
             )
         }
     }

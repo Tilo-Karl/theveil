@@ -3,13 +3,14 @@ import Foundation
 
 @MainActor
 final class EssenceInventoryStore: ObservableObject {
-    @Published private(set) var capacitorEssenceCount = 0
+    @Published private(set) var capacitorEssenceCount: Int
     @Published private(set) var isIntegratedCellUnlocked: Bool
     @Published private(set) var containmentCellEssenceCount: Int
 
     let equipment: VeilEquipmentConfiguration
 
     private let defaults: UserDefaults
+    private let capacitorChargeKey = "inventory.veilCapacitor.charge"
     private let integratedCellUnlockedKey = "inventory.integratedContainmentCell.unlocked"
     private let integratedCellChargeKey = "inventory.integratedContainmentCell.charge"
     private let integratedCellMigrationKey = "inventory.integratedContainmentCell.migrated"
@@ -21,6 +22,10 @@ final class EssenceInventoryStore: ObservableObject {
     ) {
         self.defaults = defaults
         self.equipment = equipment
+        self.capacitorEssenceCount = min(
+            max(0, defaults.integer(forKey: capacitorChargeKey)),
+            equipment.capacitorCapacity
+        )
 
         if
             !defaults.bool(forKey: integratedCellMigrationKey),
@@ -55,12 +60,14 @@ final class EssenceInventoryStore: ObservableObject {
         }
 
         capacitorEssenceCount += essence.value
+        persistCapacitorCharge()
         return true
     }
 
     func uploadCapacitorEssence() -> Int {
         let uploadedEssence = capacitorEssenceCount
         capacitorEssenceCount = 0
+        persistCapacitorCharge()
         return uploadedEssence
     }
 
@@ -69,6 +76,34 @@ final class EssenceInventoryStore: ObservableObject {
             return false
         }
         capacitorEssenceCount -= 1
+        persistCapacitorCharge()
+        return true
+    }
+
+    func consumeCapacitorEssence(_ amount: Int) -> Int {
+        let consumedEssence = min(max(amount, 0), capacitorEssenceCount)
+        guard consumedEssence > 0 else {
+            return 0
+        }
+
+        capacitorEssenceCount -= consumedEssence
+        persistCapacitorCharge()
+        return consumedEssence
+    }
+
+    func transferCellEssenceToCapacitor() -> Bool {
+        guard
+            isIntegratedCellUnlocked,
+            containmentCellEssenceCount > 0,
+            capacitorEssenceCount < equipment.capacitorCapacity
+        else {
+            return false
+        }
+
+        capacitorEssenceCount += 1
+        containmentCellEssenceCount -= 1
+        persistCapacitorCharge()
+        persistContainmentCellCharge()
         return true
     }
 
@@ -103,43 +138,16 @@ final class EssenceInventoryStore: ObservableObject {
         let transferredEssence = min(capacitorEssenceCount, availableCellCapacity)
         capacitorEssenceCount -= transferredEssence
         containmentCellEssenceCount += transferredEssence
+        persistCapacitorCharge()
         defaults.set(containmentCellEssenceCount, forKey: integratedCellChargeKey)
         return .transferred(essence: transferredEssence)
     }
 
-    func activateContainmentCell() -> ContainmentCellActivationResult {
-        guard isIntegratedCellUnlocked else {
-            return .cellLocked
-        }
-        guard containmentCellEssenceCount > 0 else {
-            return .cellEmpty
-        }
-
-        if capacitorEssenceCount < equipment.capacitorCapacity {
-            let availableCapacity = equipment.capacitorCapacity - capacitorEssenceCount
-            let transferredEssence = min(availableCapacity, containmentCellEssenceCount)
-            capacitorEssenceCount += transferredEssence
-            containmentCellEssenceCount -= transferredEssence
-            persistContainmentCellCharge()
-            return .capacitorRefilled(
-                transferredEssence: transferredEssence,
-                capacitorCharge: capacitorEssenceCount,
-                cellCharge: containmentCellEssenceCount
-            )
-        }
-
-        let injectedEssence = containmentCellEssenceCount
-        capacitorEssenceCount += injectedEssence
-        containmentCellEssenceCount = 0
-        persistContainmentCellCharge()
-        return .capacitorOverloaded(
-            peakCharge: capacitorEssenceCount,
-            capacitorCapacity: equipment.capacitorCapacity,
-            injectedEssence: injectedEssence
-        )
-    }
-
     private func persistContainmentCellCharge() {
         defaults.set(containmentCellEssenceCount, forKey: integratedCellChargeKey)
+    }
+
+    private func persistCapacitorCharge() {
+        defaults.set(capacitorEssenceCount, forKey: capacitorChargeKey)
     }
 }

@@ -50,6 +50,7 @@ void specterSurface(realitykit::surface_parameters params) {
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
     float phase = controls.x;
+    float attackCharge = saturate(controls.y);
 
     float distFromCenter = length(position);
     float fresnel = pow(saturate(1.0 - abs(dot(normal, viewDirection))), 1.6);
@@ -94,7 +95,9 @@ void specterSurface(realitykit::surface_parameters params) {
     float mouthPulse = 0.5 + 0.5 * sin(time * 1.8 + phase * 3.5);
     float mouthPresence = mouthOpening * mouthPulse * faceMask;
 
-    float faceEmergence = smoothstep(0.3, 0.7, instability) * (sin(time * 0.45 + phase * 2.0) * 0.3 + 0.7);
+    float ambientFace = smoothstep(0.3, 0.7, instability)
+        * (sin(time * 0.45 + phase * 2.0) * 0.3 + 0.7);
+    float faceEmergence = max(ambientFace, smoothstep(0.12, 0.78, attackCharge));
 
     float3 darkPurple = float3(0.25, 0.08, 0.42);
     float3 vibrantPurple = float3(0.68, 0.15, 0.85);
@@ -118,7 +121,7 @@ void specterSurface(realitykit::surface_parameters params) {
     float plasmaGlow = (0.35 + instability * 0.65 + fresnel * 0.55) * vortexPattern;
     float faceIntensity = eyePresence * 2.8 + mouthPresence * 0.3;
 
-    float intensity = coreGlow + plasmaGlow + faceIntensity;
+    float intensity = coreGlow + plasmaGlow + faceIntensity + attackCharge * 0.85;
     intensity *= controls.z;
 
     float coreAlpha = 0.25 * coreIntensity;
@@ -126,7 +129,8 @@ void specterSurface(realitykit::surface_parameters params) {
     float faceAlpha = eyePresence * 0.25 + mouthPresence * 0.15;
     float outerFade = smoothstep(0.5, 0.35, distFromCenter);
 
-    float alpha = (coreAlpha + plasmaAlpha + faceAlpha) * outerFade * controls.w;
+    float alpha = (coreAlpha + plasmaAlpha + faceAlpha + attackCharge * 0.08)
+        * outerFade * controls.w;
 
     surface.set_emissive_color(half3(color * intensity));
     surface.set_opacity(half(saturate(alpha)));

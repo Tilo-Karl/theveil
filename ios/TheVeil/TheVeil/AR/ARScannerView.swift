@@ -40,6 +40,7 @@ extension ARScannerView {
         private var lastResonanceUpdateAt: CFTimeInterval?
         private let haptic = UIImpactFeedbackGenerator(style: .light)
         private let overloadHaptic = UIImpactFeedbackGenerator(style: .heavy)
+        private let combatHaptic = UINotificationFeedbackGenerator()
         private var hasRenderedEssenceField = false
         private var renderedEssenceFieldRevision = -1
         private var handledManifestationPulseEventCount = 0
@@ -84,6 +85,7 @@ extension ARScannerView {
 
             haptic.prepare()
             overloadHaptic.prepare()
+            combatHaptic.prepare()
             startVacuumLoop()
         }
 
@@ -203,11 +205,13 @@ extension ARScannerView {
                 at: displayLink.timestamp,
                 cameraPosition: arView.cameraTransform.translation
             )
-            specterRenderer.update(
-                at: displayLink.timestamp,
-                cameraPosition: arView.cameraTransform.translation
-            )
             synchronizeManifestationRenderers(in: arView)
+            let combatEvents = specterRenderer.update(
+                at: displayLink.timestamp,
+                cameraPosition: arView.cameraTransform.translation,
+                in: arView
+            )
+            handleSpecterCombatEvents(combatEvents)
             updatePostProcessEffects(in: arView)
 
             let previousResonanceUpdateAt = lastResonanceUpdateAt ?? displayLink.timestamp
@@ -217,7 +221,7 @@ extension ARScannerView {
             )
             lastResonanceUpdateAt = displayLink.timestamp
 
-            guard viewModel.isScannerActive else {
+            guard viewModel.isScannerOperational else {
                 clearVacuumLock()
                 viewModel.updateSpectralSignal(
                     strength: 0.05,
@@ -266,8 +270,15 @@ extension ARScannerView {
                 haptic.prepare()
             }
 
-            if update.didCompleteBeam, case .essence(let id, _) = target {
-                collectEssence(id: id, in: arView)
+            if update.didCompleteBeam {
+                switch target {
+                case .essence(let id, _):
+                    collectEssence(id: id, in: arView)
+                case .specter:
+                    viewModel.applyWeakResonancePulse()
+                case .lostSoul:
+                    break
+                }
             }
         }
 
@@ -436,7 +447,10 @@ extension ARScannerView {
         }
 
         private func synchronizeManifestationRenderers(in arView: ARView) {
-            if let specter = viewModel.specterStore.activeSpecter {
+            if
+                viewModel.encounterStore.state.phase == .manifested,
+                let specter = viewModel.specterStore.activeSpecter
+            {
                 specterRenderer.render(specter, in: arView)
             } else {
                 specterRenderer.remove(from: arView)
@@ -444,6 +458,25 @@ extension ARScannerView {
 
             if let lostSoul = viewModel.lostSoulStore.lostSoul {
                 lostSoulRenderer.render(lostSoul, in: arView)
+            }
+        }
+
+        private func handleSpecterCombatEvents(_ events: [SpecterCombatEvent]) {
+            for event in events {
+                viewModel.handleSpecterCombatEvent(event)
+                switch event {
+                case .attackTelegraph:
+                    haptic.impactOccurred(intensity: 0.42)
+                    haptic.prepare()
+                case .boltFired:
+                    break
+                case .boltHit:
+                    combatHaptic.notificationOccurred(.error)
+                    combatHaptic.prepare()
+                case .boltDodged:
+                    combatHaptic.notificationOccurred(.success)
+                    combatHaptic.prepare()
+                }
             }
         }
 

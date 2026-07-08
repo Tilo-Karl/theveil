@@ -55,7 +55,7 @@ extension ARScannerViewModel {
     }
 
     func dischargeCapacitorEssence() {
-        guard isScannerActive else {
+        guard isScannerOperational else {
             return
         }
 
@@ -69,9 +69,17 @@ extension ARScannerViewModel {
             return
         }
 
-        guard inventoryStore.capacitorEssenceCount > 0 else {
+        guard dischargeCircuitStore.isActive || inventoryStore.capacitorEssenceCount > 0 else {
             presentBriefNotice(.capacitorEmpty)
             return
+        }
+
+        if encounterStore.state.phase == .manifested {
+            guard resonanceBeamActive else {
+                presentBriefNotice(.manifestationDetected, milliseconds: 1_000)
+                return
+            }
+            armContainmentCellFeed()
         }
 
         if gameplayPhase == .charged {
@@ -83,45 +91,23 @@ extension ARScannerViewModel {
         startDischargeCircuit(intensity: 1)
     }
 
-    func activateContainmentCell() {
-        guard isScannerActive, megaBeamStartedAt == nil else {
+    func overloadCapacitor() {
+        guard canOverloadCapacitor else {
             return
         }
 
-        switch inventoryStore.activateContainmentCell() {
-        case .cellLocked:
-            presentBriefNotice(.containmentCellLocked)
-
-        case .cellEmpty:
-            presentBriefNotice(.containmentCellEmpty)
-
-        case .capacitorRefilled(
-            let transferredEssence,
-            let capacitorCharge,
-            let cellCharge
-        ):
-            if
-                gameplayPhase == .calmSearch,
-                capacitorCharge == inventoryStore.equipment.capacitorCapacity
-            {
-                gameplayPhase = .charged
-                scannerStateStore.setStatus(.charged)
-            }
-            essenceStorageEventCounter += 1
-            presentBriefNotice(
-                .capacitorRefilled(
-                    transferred: transferredEssence,
-                    capacitorCharge: capacitorCharge,
-                    capacitorCapacity: inventoryStore.equipment.capacitorCapacity,
-                    cellCharge: cellCharge,
-                    cellCapacity: inventoryStore.equipment.containmentCellCapacity
-                ),
-                milliseconds: 1_250
-            )
-
-        case .capacitorOverloaded(let peakCharge, let capacity, _):
-            beginCapacitorOverload(peakCharge: peakCharge, capacitorCapacity: capacity)
+        let capacitorCapacity = inventoryStore.equipment.capacitorCapacity
+        let consumedCharge = inventoryStore.consumeCapacitorEssence(capacitorCapacity)
+        guard consumedCharge > 0 else {
+            presentBriefNotice(.capacitorEmpty)
+            return
         }
+
+        armContainmentCellFeed()
+        beginCapacitorOverload(
+            consumedCharge: consumedCharge,
+            capacitorCapacity: capacitorCapacity
+        )
     }
 
     func routeDischargePower(
@@ -136,12 +122,13 @@ extension ARScannerViewModel {
             guard resonanceBeamActive else {
                 return .noEffect
             }
-            return encounterStore.contributeTargetResonance(
-                amount,
-                combinedIntensity: intensity
+            return encounterStore.applyResonanceOutput(
+                output: inventoryStore.equipment.weakBeamOutput
+                    + inventoryStore.equipment.dischargeOutput,
+                pulseFraction: amount
             )
 
-        case .resupply, .resolved:
+        case .resupply, .resolved, .escaped:
             return .noEffect
         }
     }
@@ -159,12 +146,18 @@ extension ARScannerViewModel {
                 beginManifestationFieldCharged()
             case .resolved:
                 restoreScannerStatusAfterDischarge()
+            case .escaped:
+                break
             case .chargingField, .manifested:
                 restoreScannerStatusAfterDischarge()
             }
 
         case .playerStopped, .capacitorEmpty:
-            restoreScannerStatusAfterDischarge()
+            if encounterStore.completeFieldChargeIfReady() {
+                beginManifestationFieldCharged()
+            } else {
+                restoreScannerStatusAfterDischarge()
+            }
         }
     }
 
@@ -182,6 +175,26 @@ extension ARScannerViewModel {
             scannerStateStore.setStatus(.hunting)
         case .manifestation:
             scannerStateStore.setStatus(.minorSpecterManifested)
+        }
+    }
+
+    func applyWeakResonancePulse() {
+        guard
+            encounterStore.state.phase == .manifested,
+            resonanceBeamActive,
+            !dischargeCircuitStore.isActive,
+            megaBeamStartedAt == nil
+        else {
+            return
+        }
+
+        let result = encounterStore.applyResonanceOutput(
+            output: inventoryStore.equipment.weakBeamOutput,
+            pulseFraction: 1
+        )
+
+        if result == .thresholdReached {
+            handleDischargeStopped(.encounterThresholdReached)
         }
     }
 
@@ -243,26 +256,59 @@ extension ARScannerViewModel {
     }
 
     func beginCapacitorOverload(
-        peakCharge: Int,
+        consumedCharge: Int,
         capacitorCapacity: Int
     ) {
         noticeTask?.cancel()
-        clearLockOn()
 
-        let excessCharge = max(peakCharge - capacitorCapacity, 0)
-        megaBeamPeakCharge = peakCharge
-        megaBeamIntensity = min(
-            Double(excessCharge) / Double(max(inventoryStore.equipment.containmentCellCapacity, 1)),
-            1
-        )
+        let output = inventoryStore.equipment.weakBeamOutput + Double(consumedCharge)
+        megaBeamPeakCharge = consumedCharge
+        megaBeamIntensity = min(Double(consumedCharge) / Double(max(capacitorCapacity, 1)), 1)
         megaBeamStartedAt = Date()
         megaBeamEventCounter += 1
         scannerNotice = .capacitorOverloaded(
-            peakCharge: peakCharge,
+            peakCharge: consumedCharge,
             capacitorCapacity: capacitorCapacity
         )
 
-        startDischargeCircuit(intensity: 2)
+        overloadPulseTask?.cancel()
+        overloadPulseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let duration = inventoryStore.equipment.resonancePulseDuration
+            var elapsed: TimeInterval = 0
+            var previous = ContinuousClock.now
+
+            while elapsed < duration, megaBeamStartedAt != nil {
+                do {
+                    try await Task.sleep(for: .milliseconds(50))
+                } catch {
+                    return
+                }
+
+                let now = ContinuousClock.now
+                let delta = min(previous.duration(to: now).timeInterval, duration - elapsed)
+                previous = now
+                elapsed += delta
+
+                let result = encounterStore.applyResonanceOutput(
+                    output: output,
+                    pulseFraction: delta / duration
+                )
+
+                if result == .thresholdReached {
+                    megaBeamStartedAt = nil
+                    overloadPulseTask = nil
+                    handleDischargeStopped(.encounterThresholdReached)
+                    return
+                }
+            }
+
+            megaBeamStartedAt = nil
+            overloadPulseTask = nil
+            scannerNotice = nil
+            restoreScannerStatusAfterDischarge()
+        }
     }
 
     private func startDischargeCircuit(intensity: Int) {
@@ -275,5 +321,50 @@ extension ARScannerViewModel {
                 self?.handleDischargeStopped(reason)
             }
         )
+    }
+
+    private func armContainmentCellFeed() {
+        guard
+            encounterStore.state.phase == .manifested,
+            inventoryStore.isIntegratedCellUnlocked,
+            inventoryStore.containmentCellEssenceCount > 0
+        else {
+            return
+        }
+
+        guard cellFeedTask == nil else {
+            return
+        }
+
+        cellFeedTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while encounterStore.state.phase == .manifested {
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                } catch {
+                    return
+                }
+
+                guard encounterStore.state.phase == .manifested else {
+                    break
+                }
+
+                if !inventoryStore.transferCellEssenceToCapacitor(),
+                   inventoryStore.containmentCellEssenceCount <= 0 {
+                    break
+                }
+            }
+
+            cellFeedTask = nil
+        }
+    }
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval {
+        let components = self.components
+        return TimeInterval(components.seconds)
+            + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
     }
 }

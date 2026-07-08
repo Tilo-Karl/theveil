@@ -33,6 +33,7 @@ struct ResonanceLockTracker {
 
         let previousLockProgress = state.lockProgress
         let previousBeamProgress = state.beamProgress
+        var completedBeamPulse = false
 
         if state.lockProgress < 1 {
             state.lockProgress = min(
@@ -40,16 +41,17 @@ struct ResonanceLockTracker {
                 1
             )
         } else {
-            state.beamProgress = min(
-                state.beamProgress + delta / max(beamDuration, 0.001),
-                1
-            )
+            state.beamProgress += delta / max(beamDuration, 0.001)
+            if state.beamProgress >= 1 {
+                completedBeamPulse = true
+                state.beamProgress.formTruncatingRemainder(dividingBy: 1)
+            }
         }
 
         return ResonanceLockUpdate(
             state: state,
             didAcquireLock: previousLockProgress < 1 && state.lockProgress >= 1,
-            didCompleteBeam: previousBeamProgress < 1 && state.beamProgress >= 1
+            didCompleteBeam: completedBeamPulse || previousBeamProgress < 1 && state.beamProgress >= 1
         )
     }
 

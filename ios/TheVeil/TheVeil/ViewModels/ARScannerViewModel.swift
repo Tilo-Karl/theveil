@@ -35,6 +35,11 @@ final class ARScannerViewModel: ObservableObject {
     @Published private(set) var awakenedExtractionCount = 0
     @Published var manifestationPulseStartedAt: Date?
     @Published var essenceFieldRevision = 0
+    @Published private(set) var fearLevel = 0
+    @Published private(set) var combatFeedback: SpecterCombatFeedback?
+    @Published private(set) var combatFeedbackEventCounter = 0
+    @Published private(set) var combatFeedbackStartedAt: Date?
+    @Published private(set) var scannerFailsafeStartedAt: Date?
     #if DEBUG
     @Published private(set) var debugAutoLockEnabled = false
     @Published private(set) var debugPhaseCubeEnabled = false
@@ -47,10 +52,16 @@ final class ARScannerViewModel: ObservableObject {
     var noticeTask: Task<Void, Never>?
     var manifestationTransitionTask: Task<Void, Never>?
     var resupplyTask: Task<Void, Never>?
+    var overloadPulseTask: Task<Void, Never>?
+    var cellFeedTask: Task<Void, Never>?
+    private var combatFeedbackTask: Task<Void, Never>?
+    private var scannerRepairTask: Task<Void, Never>?
     private let bootDuration: CFTimeInterval = 2.4
     private let lensEngagementDuration: CFTimeInterval = 1
     let resupplyDuration: Duration = .seconds(24)
     let awakenedExtractionGoal = 3
+    let fearCapacity = 100
+    let scannerFailsafeDuration: TimeInterval = 7
 
     @MainActor
     init() {
@@ -113,13 +124,18 @@ final class ARScannerViewModel: ObservableObject {
         startupPhase == .active
     }
 
+    var isScannerOperational: Bool {
+        isScannerActive && scannerFailsafeStartedAt == nil
+    }
+
     var canExtractEssence: Bool {
         megaBeamStartedAt == nil
+            && scannerFailsafeStartedAt == nil
             && (gameplayPhase == .calmSearch || gameplayPhase == .awakenedHunt)
     }
 
     var canOperateCapacitor: Bool {
-        isScannerActive && megaBeamStartedAt == nil
+        isScannerOperational && megaBeamStartedAt == nil
     }
 
     var canManageCapacitorStorage: Bool {
@@ -139,11 +155,26 @@ final class ARScannerViewModel: ObservableObject {
         inventoryStore.equipment.containmentCellCapacity
     }
 
-    var canActivateContainmentCell: Bool {
-        isScannerActive
-            && inventoryStore.isIntegratedCellUnlocked
-            && inventoryStore.containmentCellEssenceCount > 0
+    var canDischargeCapacitor: Bool {
+        if dischargeCircuitStore.isActive {
+            return true
+        }
+        guard inventoryStore.capacitorEssenceCount > 0 else {
+            return false
+        }
+        guard encounterStore.state.phase == .manifested else {
+            return isScannerOperational
+        }
+        return isScannerOperational && resonanceBeamActive
+    }
+
+    var canOverloadCapacitor: Bool {
+        inventoryStore.capacitorEssenceCount >= inventoryStore.equipment.capacitorCapacity
+            && encounterStore.state.phase == .manifested
+            && isScannerOperational
+            && resonanceBeamActive
             && megaBeamStartedAt == nil
+            && !dischargeCircuitStore.isActive
     }
 
     var counterLabel: String {
@@ -164,7 +195,7 @@ final class ARScannerViewModel: ObservableObject {
         case .awakenedHunt:
             return AppStrings.resupplyCounterLabel
         case .manifestation:
-            return AppStrings.resonanceCounterLabel
+            return AppStrings.integrityCounterLabel
         }
     }
 
@@ -179,7 +210,7 @@ final class ARScannerViewModel: ObservableObject {
             encounterStore.state.phase == .manifested,
             let profile = encounterStore.state.entityProfile
         {
-            return "\(AppStrings.resonanceValue(encounterStore.targetResonance)) / \(AppStrings.resonanceValue(profile.stability))"
+            return "\(AppStrings.resonanceValue(encounterStore.ectoplasmicDamage)) / \(AppStrings.resonanceValue(profile.ectoplasmicIntegrity))"
         }
         return "\(visibleEssenceStore.visibleEssenceCount)"
     }
@@ -308,6 +339,32 @@ final class ARScannerViewModel: ObservableObject {
         resonanceBeamActive = false
     }
 
+    func handleSpecterCombatEvent(_ event: SpecterCombatEvent) {
+        guard
+            gameplayPhase == .manifestation,
+            encounterStore.state.phase == .manifested,
+            scannerFailsafeStartedAt == nil
+        else {
+            return
+        }
+
+        switch event {
+        case .attackTelegraph, .boltFired:
+            presentCombatFeedback(.incoming, milliseconds: 900)
+
+        case .boltDodged:
+            presentCombatFeedback(.dodged, milliseconds: 850)
+
+        case .boltHit:
+            fearLevel = min(fearLevel + 34, fearCapacity)
+            if fearLevel >= fearCapacity {
+                triggerScannerFailsafe()
+            } else {
+                presentCombatFeedback(.hit, milliseconds: 1_050)
+            }
+        }
+    }
+
     #if DEBUG
     func setDebugAutoLockEnabled(_ enabled: Bool) {
         debugAutoLockEnabled = enabled
@@ -342,6 +399,12 @@ final class ARScannerViewModel: ObservableObject {
         gameplayPhase = .calmSearch
         awakenedExtractionCount = 0
         manifestationPulseStartedAt = nil
+        overloadPulseTask?.cancel()
+        cellFeedTask?.cancel()
+        megaBeamStartedAt = nil
+        fearLevel = 0
+        combatFeedback = nil
+        scannerFailsafeStartedAt = nil
         scannerStateStore.setStatus(.scanning)
     }
 
@@ -358,7 +421,65 @@ final class ARScannerViewModel: ObservableObject {
             : .calmSearch
         scannerStateStore.setStatus(gameplayPhase == .charged ? .charged : .scanning)
         manifestationPulseStartedAt = nil
+        overloadPulseTask?.cancel()
+        cellFeedTask?.cancel()
+        megaBeamStartedAt = nil
+        fearLevel = 0
         essenceFieldRevision += 1
+    }
+
+    private func presentCombatFeedback(
+        _ feedback: SpecterCombatFeedback,
+        milliseconds: Int
+    ) {
+        combatFeedbackTask?.cancel()
+        combatFeedback = feedback
+        combatFeedbackStartedAt = Date()
+        combatFeedbackEventCounter += 1
+
+        combatFeedbackTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(milliseconds))
+            } catch {
+                return
+            }
+            self?.combatFeedback = nil
+            self?.combatFeedbackStartedAt = nil
+        }
+    }
+
+    private func triggerScannerFailsafe() {
+        combatFeedbackTask?.cancel()
+        scannerRepairTask?.cancel()
+        overloadPulseTask?.cancel()
+        cellFeedTask?.cancel()
+        dischargeCircuitOrchestrator.stop(reason: .playerStopped)
+        clearLockOn()
+        specterStore.clear()
+        lostSoulStore.clear()
+        encounterStore.endManifestationAsEscaped()
+        scannerNotice = nil
+        combatFeedback = .scannerFailsafe
+        combatFeedbackStartedAt = Date()
+        combatFeedbackEventCounter += 1
+        scannerFailsafeStartedAt = Date()
+        scannerStateStore.setStatus(.scannerFailsafe)
+
+        scannerRepairTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: .seconds(scannerFailsafeDuration))
+            } catch {
+                return
+            }
+
+            scannerFailsafeStartedAt = nil
+            combatFeedback = nil
+            combatFeedbackStartedAt = nil
+            fearLevel = 0
+            encounterStore.reset()
+            beginFreshCalmSearch()
+        }
     }
 
     private func presentExtractionFeedback() {
