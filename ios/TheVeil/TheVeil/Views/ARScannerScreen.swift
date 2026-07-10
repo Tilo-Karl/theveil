@@ -266,7 +266,7 @@ private struct SpecterCombatFeedbackOverlay: View {
         case .dodged:
             AppStrings.resonanceBoltDodgedStatus
         case .scannerFailsafe:
-            AppStrings.neuralFeedbackLimitStatus
+            AppStrings.scannerIntegrityCriticalStatus
         }
     }
 
@@ -316,7 +316,7 @@ private struct ScannerFailsafeOverlay: View {
                 VStack(spacing: 10) {
                     Image(systemName: "waveform.path.ecg.rectangle")
                         .font(.largeTitle.weight(.light))
-                    Text(AppStrings.neuralFeedbackLimitStatus)
+                    Text(AppStrings.scannerIntegrityCriticalStatus)
                         .font(.headline.monospaced().weight(.bold))
                     Text(AppStrings.autoRecalibratingStatus)
                         .font(.caption.monospaced())

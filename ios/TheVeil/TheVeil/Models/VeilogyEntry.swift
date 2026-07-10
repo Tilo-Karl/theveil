@@ -121,7 +121,7 @@ struct VeilogyEntry: Identifiable {
             ),
             VeilogySection(
                 title: "ATTACK: RESONANCE BOLT",
-                body: "The Specter condenses ectoplasmic energy before discharging a high-energy Resonance Bolt.\n\nDirect impact increases investigator Fear. More powerful Specters fire bolts more rapidly and with greater energy."
+                body: "The Specter condenses ectoplasmic energy before discharging a high-energy Resonance Bolt.\n\nDirect impact damages Scanner Integrity. More powerful Specters fire bolts more rapidly and with greater energy."
             ),
             VeilogySection(
                 title: "WEAKNESS",

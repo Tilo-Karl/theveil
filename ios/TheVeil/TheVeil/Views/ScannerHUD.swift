@@ -12,9 +12,9 @@ struct ScannerHUD: View {
             header
             HStack {
                 if viewModel.gameplayPhase == .manifestation || viewModel.scannerFailsafeStartedAt != nil {
-                    FearIndicator(
-                        fear: viewModel.fearLevel,
-                        capacity: viewModel.fearCapacity
+                    ScannerIntegrityIndicator(
+                        integrity: viewModel.scannerIntegrity,
+                        capacity: viewModel.scannerIntegrityCapacity
                     )
                 }
                 Spacer()
@@ -222,18 +222,20 @@ struct ScannerHUD: View {
     }
 }
 
-private struct FearIndicator: View {
-    let fear: Int
+private struct ScannerIntegrityIndicator: View {
+    let integrity: Int
     let capacity: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
-                Image(systemName: "waveform.path.ecg")
+                Image(systemName: "shield.lefthalf.filled")
                     .font(.caption2.weight(.semibold))
-                Text(AppStrings.fearLabel)
+                Text(AppStrings.scannerIntegrityLabel)
                     .font(.caption2.monospaced().weight(.semibold))
-                Text("\(fear) / \(capacity)")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("\(integrity) / \(capacity)")
                     .font(.caption2.monospacedDigit().weight(.medium))
             }
 
@@ -241,30 +243,30 @@ private struct FearIndicator: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.12))
                     Capsule()
-                        .fill(fearColor)
-                        .frame(width: geometry.size.width * fearFraction)
+                        .fill(integrityColor)
+                        .frame(width: geometry.size.width * integrityFraction)
                 }
             }
-            .frame(width: 112, height: 3)
+            .frame(width: 150, height: 3)
         }
-        .foregroundStyle(fearColor)
+        .foregroundStyle(integrityColor)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color.black.opacity(0.58))
         .overlay {
             RoundedRectangle(cornerRadius: 5)
-                .stroke(fearColor.opacity(0.4), lineWidth: 1)
+                .stroke(integrityColor.opacity(0.4), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
-    private var fearFraction: CGFloat {
+    private var integrityFraction: CGFloat {
         guard capacity > 0 else { return 0 }
-        return min(max(CGFloat(fear) / CGFloat(capacity), 0), 1)
+        return min(max(CGFloat(integrity) / CGFloat(capacity), 0), 1)
     }
 
-    private var fearColor: Color {
-        fearFraction >= 0.67
+    private var integrityColor: Color {
+        integrityFraction <= 0.34
             ? Color(red: 1, green: 0.22, blue: 0.28)
             : Color(red: 0.82, green: 0.32, blue: 1)
     }

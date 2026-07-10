@@ -35,7 +35,7 @@ final class ARScannerViewModel: ObservableObject {
     @Published private(set) var awakenedExtractionCount = 0
     @Published var manifestationPulseStartedAt: Date?
     @Published var essenceFieldRevision = 0
-    @Published private(set) var fearLevel = 0
+    @Published private(set) var scannerIntegrity = 100
     @Published private(set) var combatFeedback: SpecterCombatFeedback?
     @Published private(set) var combatFeedbackEventCounter = 0
     @Published private(set) var combatFeedbackStartedAt: Date?
@@ -60,7 +60,8 @@ final class ARScannerViewModel: ObservableObject {
     private let lensEngagementDuration: CFTimeInterval = 1
     let resupplyDuration: Duration = .seconds(24)
     let awakenedExtractionGoal = 3
-    let fearCapacity = 100
+    let scannerIntegrityCapacity = 100
+    private let scannerIntegrityDamagePerHit = 34
     let scannerFailsafeDuration: TimeInterval = 7
 
     @MainActor
@@ -356,8 +357,11 @@ final class ARScannerViewModel: ObservableObject {
             presentCombatFeedback(.dodged, milliseconds: 850)
 
         case .boltHit:
-            fearLevel = min(fearLevel + 34, fearCapacity)
-            if fearLevel >= fearCapacity {
+            scannerIntegrity = max(
+                scannerIntegrity - scannerIntegrityDamagePerHit,
+                0
+            )
+            if scannerIntegrity <= 0 {
                 triggerScannerFailsafe()
             } else {
                 presentCombatFeedback(.hit, milliseconds: 1_050)
@@ -402,7 +406,7 @@ final class ARScannerViewModel: ObservableObject {
         overloadPulseTask?.cancel()
         cellFeedTask?.cancel()
         megaBeamStartedAt = nil
-        fearLevel = 0
+        scannerIntegrity = scannerIntegrityCapacity
         combatFeedback = nil
         scannerFailsafeStartedAt = nil
         scannerStateStore.setStatus(.scanning)
@@ -424,7 +428,7 @@ final class ARScannerViewModel: ObservableObject {
         overloadPulseTask?.cancel()
         cellFeedTask?.cancel()
         megaBeamStartedAt = nil
-        fearLevel = 0
+        scannerIntegrity = scannerIntegrityCapacity
         essenceFieldRevision += 1
     }
 
@@ -476,7 +480,7 @@ final class ARScannerViewModel: ObservableObject {
             scannerFailsafeStartedAt = nil
             combatFeedback = nil
             combatFeedbackStartedAt = nil
-            fearLevel = 0
+            scannerIntegrity = scannerIntegrityCapacity
             encounterStore.reset()
             beginFreshCalmSearch()
         }

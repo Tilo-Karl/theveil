@@ -425,9 +425,9 @@ The currently implemented Minor Specter:
 - [x] Fires a distinct world-space Resonance Bolt toward the investigator's position at launch.
 - [x] Uses non-homing bolts so physical camera movement can evade an attack.
 - [x] Produces separate incoming, impact, and successful-dodge feedback.
-- [x] Increases investigator Fear when a Resonance Bolt hits.
-- [x] Displays Fear on the scanner HUD.
-- [x] Triggers a scanner failsafe when Fear reaches its limit.
+- [x] Reduces Scanner Integrity when a Resonance Bolt hits.
+- [x] Displays Scanner Integrity on the scanner HUD.
+- [x] Triggers a scanner failsafe when Scanner Integrity reaches zero.
 - [x] Ends the encounter immediately when the failsafe triggers; the Specter escapes and releases no collectible residue.
 - [x] Shows a fractured spectral lens and disables scanner operation during automatic recalibration.
 - [x] Returns to a fresh investigation after recalibration.
@@ -437,9 +437,9 @@ The currently implemented Minor Specter:
 
 Current combat tuning targets are a 1.1-second attack telegraph, a variable 3.2-to-4.8-second attack interval, and scanner failure after three direct Resonance Bolt hits. These values remain subject to device playtesting.
 
-## Fear Failure
+## Scanner Integrity Failure
 
-Fear represents dangerous neural feedback caused by direct exposure to hostile spectral resonance. At maximum Fear:
+Scanner Integrity represents the scanner's ability to maintain a stable spectral lens, Resonance Lock, and beam output under hostile spectral attack. It starts at `100`. Direct Resonance Bolt impacts reduce Scanner Integrity. At `0`:
 
 - Resonance Lock and active beam contact collapse.
 - The scanner's spectral lens visibly fractures and enters failsafe.
@@ -447,6 +447,10 @@ Fear represents dangerous neural feedback caused by direct exposure to hostile s
 - The failed encounter produces no Ghost Essence, ectoplasm, research sample, or other reward.
 - Scanner controls remain disabled during a seven-second automatic recalibration.
 - Recalibration starts a fresh investigation without restoring the failed encounter.
+
+## Future Fear Mechanic
+
+Fear is deferred as a possible secondary psychological system. It may later affect perception, false readings, hallucinated signals, UI distortion, or other paranormal pressure effects, but it is not the current combat damage meter.
 
 # Ghost Essence, Ectoplasm, And Ghost Research
 

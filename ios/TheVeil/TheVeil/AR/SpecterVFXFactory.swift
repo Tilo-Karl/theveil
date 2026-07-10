@@ -4,81 +4,101 @@ import UIKit
 
 @MainActor
 final class SpecterVFXFactory {
-    private let bodyMesh: MeshResource?
-    private let bodyMaterial: CustomMaterial?
+    private let faceMesh: MeshResource?
+    private let faceMaterial: CustomMaterial?
     private let plasmaTexture = SpectralParticleTextureFactory.makeTexture(
-        color: UIColor(red: 0.7, green: 0.2, blue: 0.95, alpha: 0.8),
-        name: "specter-plasma"
+        color: UIColor(red: 0.72, green: 0.12, blue: 1.0, alpha: 0.92),
+        name: "specter-outline-plasma"
     )
 
     init() {
-        bodyMesh = try? ProceduralSpecter.makeMesh()
+        faceMesh = try? ProceduralSpecter.makeFacePlane()
 
         guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
-            bodyMaterial = nil
+            faceMaterial = nil
             return
         }
-        bodyMaterial = Self.makeBodyMaterial(library: library)
+
+        faceMaterial = Self.makeFaceMaterial(library: library)
     }
 
     func make(id: String, phase: Float) -> SpecterVFX? {
-        guard let bodyMesh, let bodyMaterial, let plasmaTexture else {
+        guard let faceMesh, let faceMaterial, let plasmaTexture else {
             return nil
         }
 
         let root = Entity()
         root.name = id
 
-        let outerPlasma = makeBodyLayer(
-            mesh: bodyMesh,
-            baseMaterial: bodyMaterial,
-            controls: SIMD4<Float>(phase, 0, 1.28, 0.72),
-            scale: 1.0
+        // Broad spectral storm behind the readable face.
+        let aura = makeLayer(
+            mesh: faceMesh,
+            baseMaterial: faceMaterial,
+            controls: SIMD4<Float>(phase, 0, 1.18, 0.88),
+            scale: SIMD3<Float>(1.18, 1.18, 1.0),
+            z: 0.025
         )
 
-        let innerPlasma = makeBodyLayer(
-            mesh: bodyMesh,
-            baseMaterial: bodyMaterial,
-            controls: SIMD4<Float>(phase + 0.33, 0, 1.35, 0.65),
-            scale: 0.95
+        // Explicit face silhouette. This must remain the dominant readable layer.
+        let face = makeLayer(
+            mesh: faceMesh,
+            baseMaterial: faceMaterial,
+            controls: SIMD4<Float>(phase + 0.31, 1, 1.34, 0.98),
+            scale: SIMD3<Float>(1.0, 1.0, 1.0),
+            z: 0
         )
 
-        root.addChild(innerPlasma)
-        root.addChild(outerPlasma)
+        root.addChild(aura)
+        root.addChild(face)
 
-        let plasmaDischarge = makePlasmaDischarge(texture: plasmaTexture)
-        let curlTendrils = makeCurlTendrils(texture: plasmaTexture)
+        let sparks = makeSparks(texture: plasmaTexture)
+        let crown = makeCrownTendrils(texture: plasmaTexture)
 
-        root.addChild(plasmaDischarge)
-        root.addChild(curlTendrils)
+        root.addChild(sparks)
+        root.addChild(crown)
+        root.components.set(OpacityComponent(opacity: 1.0))
 
-        root.components.set(OpacityComponent(opacity: 0.78))
         return SpecterVFX(
             root: root,
-            bodyLayers: [outerPlasma, innerPlasma],
-            particleLayers: [plasmaDischarge, curlTendrils]
+            bodyLayers: [aura, face],
+            particleLayers: [sparks, crown]
         )
     }
 
-    private func makeBodyLayer(
+    private func makeLayer(
         mesh: MeshResource,
         baseMaterial: CustomMaterial,
         controls: SIMD4<Float>,
-        scale: Float
+        scale: SIMD3<Float>,
+        z: Float
     ) -> ModelEntity {
         var material = baseMaterial
         material.custom.value = controls
+
         let entity = ModelEntity(mesh: mesh, materials: [material])
-        entity.scale = SIMD3<Float>(repeating: scale)
+        entity.scale = scale
+        entity.position.z = z
         entity.components.set(
-            GroundingShadowComponent(castsShadow: false, receivesShadow: false)
+            GroundingShadowComponent(
+                castsShadow: false,
+                receivesShadow: false
+            )
         )
         return entity
     }
 
-    private static func makeBodyMaterial(library: any MTLLibrary) -> CustomMaterial? {
-        let surface = CustomMaterial.SurfaceShader(named: "specterSurface", in: library)
-        let geometry = CustomMaterial.GeometryModifier(named: "specterGeometry", in: library)
+    private static func makeFaceMaterial(
+        library: any MTLLibrary
+    ) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(
+            named: "specterSurface",
+            in: library
+        )
+        let geometry = CustomMaterial.GeometryModifier(
+            named: "specterGeometry",
+            in: library
+        )
+
         guard var material = try? CustomMaterial(
             surfaceShader: surface,
             geometryModifier: geometry,
@@ -94,68 +114,74 @@ final class SpecterVFXFactory {
         return material
     }
 
-    private func makePlasmaDischarge(texture: TextureResource) -> Entity {
+    private func makeSparks(texture: TextureResource) -> Entity {
         let entity = Entity()
-        entity.position = SIMD3<Float>(0, 0.1, 0)
+        entity.position = SIMD3<Float>(0, 0.06, 0.045)
+
         var component = ParticleEmitterComponent()
-        component.emitterShape = .sphere
-        component.emitterShapeSize = SIMD3<Float>(0.48, 0.48, 0.48)
+        component.emitterShape = .box
+        component.emitterShapeSize = SIMD3<Float>(0.78, 1.12, 0.10)
+        component.birthLocation = .surface
+        component.birthDirection = .local
+        component.emissionDirection = SIMD3<Float>(0, 0.22, 0)
+        component.fieldSimulationSpace = .local
+        component.particlesInheritTransform = true
+        component.speed = 0.055
+        component.speedVariation = 0.040
+        component.radialAmount = 0.58
+
+        component.mainEmitter.birthRate = 34
+        component.mainEmitter.birthRateVariation = 12
+        component.mainEmitter.lifeSpan = 1.45
+        component.mainEmitter.lifeSpanVariation = 0.52
+        component.mainEmitter.size = 0.010
+        component.mainEmitter.sizeVariation = 0.006
+        component.mainEmitter.opacityCurve = .gradualFadeInOut
+        component.mainEmitter.sizeMultiplierAtEndOfLifespan = 0.16
+        component.mainEmitter.noiseStrength = 0.18
+        component.mainEmitter.noiseScale = 0.22
+        component.mainEmitter.noiseAnimationSpeed = 0.36
+        component.mainEmitter.stretchFactor = 3.8
+        component.mainEmitter.blendMode = .additive
+        component.mainEmitter.isLightingEnabled = false
+        component.mainEmitter.image = texture
+
+        entity.components.set(component)
+        return entity
+    }
+
+    private func makeCrownTendrils(texture: TextureResource) -> Entity {
+        let entity = Entity()
+        entity.position = SIMD3<Float>(0, 0.42, 0.035)
+
+        var component = ParticleEmitterComponent()
+        component.emitterShape = .box
+        component.emitterShapeSize = SIMD3<Float>(0.62, 0.24, 0.08)
         component.birthLocation = .surface
         component.birthDirection = .local
         component.emissionDirection = SIMD3<Float>(0, 1, 0)
         component.fieldSimulationSpace = .local
         component.particlesInheritTransform = true
-        component.speed = 0.055
-        component.speedVariation = 0.022
-        component.radialAmount = 0.35
-        component.mainEmitter.birthRate = 22
-        component.mainEmitter.birthRateVariation = 7
-        component.mainEmitter.lifeSpan = 1.8
-        component.mainEmitter.lifeSpanVariation = 0.5
-        component.mainEmitter.size = 0.011
-        component.mainEmitter.sizeVariation = 0.005
-        component.mainEmitter.opacityCurve = .gradualFadeInOut
-        component.mainEmitter.sizeMultiplierAtEndOfLifespan = 0.18
-        component.mainEmitter.noiseStrength = 0.14
-        component.mainEmitter.noiseScale = 0.2
-        component.mainEmitter.noiseAnimationSpeed = 0.32
-        component.mainEmitter.stretchFactor = 4.2
-        component.mainEmitter.blendMode = .additive
-        component.mainEmitter.isLightingEnabled = false
-        component.mainEmitter.image = texture
-        entity.components.set(component)
-        return entity
-    }
+        component.speed = 0.082
+        component.speedVariation = 0.038
+        component.radialAmount = 0.46
 
-    private func makeCurlTendrils(texture: TextureResource) -> Entity {
-        let entity = Entity()
-        entity.position = SIMD3<Float>(0, 0.0, 0)
-        var component = ParticleEmitterComponent()
-        component.emitterShape = .box
-        component.emitterShapeSize = SIMD3<Float>(0.42, 0.52, 0.42)
-        component.birthLocation = .surface
-        component.birthDirection = .local
-        component.emissionDirection = SIMD3<Float>(0, 0, 0)
-        component.fieldSimulationSpace = .local
-        component.particlesInheritTransform = true
-        component.speed = 0.038
-        component.speedVariation = 0.016
-        component.radialAmount = 0.48
-        component.mainEmitter.birthRate = 28
-        component.mainEmitter.birthRateVariation = 9
-        component.mainEmitter.lifeSpan = 2.2
-        component.mainEmitter.lifeSpanVariation = 0.6
-        component.mainEmitter.size = 0.008
-        component.mainEmitter.sizeVariation = 0.004
+        component.mainEmitter.birthRate = 24
+        component.mainEmitter.birthRateVariation = 8
+        component.mainEmitter.lifeSpan = 1.75
+        component.mainEmitter.lifeSpanVariation = 0.48
+        component.mainEmitter.size = 0.012
+        component.mainEmitter.sizeVariation = 0.005
         component.mainEmitter.opacityCurve = .easeFadeOut
-        component.mainEmitter.sizeMultiplierAtEndOfLifespan = 0.2
-        component.mainEmitter.noiseStrength = 0.16
-        component.mainEmitter.noiseScale = 0.25
-        component.mainEmitter.noiseAnimationSpeed = 0.42
-        component.mainEmitter.stretchFactor = 5.8
+        component.mainEmitter.sizeMultiplierAtEndOfLifespan = 0.12
+        component.mainEmitter.noiseStrength = 0.22
+        component.mainEmitter.noiseScale = 0.18
+        component.mainEmitter.noiseAnimationSpeed = 0.50
+        component.mainEmitter.stretchFactor = 6.2
         component.mainEmitter.blendMode = .additive
         component.mainEmitter.isLightingEnabled = false
         component.mainEmitter.image = texture
+
         entity.components.set(component)
         return entity
     }
@@ -167,7 +193,11 @@ final class SpecterVFX {
     let bodyLayers: [ModelEntity]
     let particleLayers: [Entity]
 
-    init(root: Entity, bodyLayers: [ModelEntity], particleLayers: [Entity]) {
+    init(
+        root: Entity,
+        bodyLayers: [ModelEntity],
+        particleLayers: [Entity]
+    ) {
         self.root = root
         self.bodyLayers = bodyLayers
         self.particleLayers = particleLayers
