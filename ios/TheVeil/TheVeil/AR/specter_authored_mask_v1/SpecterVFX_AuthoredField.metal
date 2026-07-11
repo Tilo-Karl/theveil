@@ -81,7 +81,7 @@ void specterSurface(realitykit::surface_parameters params) {
         address::clamp_to_zero
     );
 
-    float3 field = float3(faceTexture.sample(linearSampler, warpedUV).rgb);
+    float3 field = faceTexture.sample(linearSampler, warpedUV).rgb;
     float matter = field.r;
     float authoredHighlights = field.g;
     float cavities = field.b;

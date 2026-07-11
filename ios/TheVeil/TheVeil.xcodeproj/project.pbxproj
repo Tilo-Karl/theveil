@@ -21,9 +21,25 @@
 		D769F3F92FEEDDF300A5F5E7 /* TheVeilUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TheVeilUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D7FACE012FEEDFA100A5F5E7 /* Exceptions for "TheVeil" folder in "TheVeil" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"AR/specter_authored_mask_v1/README.txt",
+				"AR/specter_authored_mask_v1/SpecterFaceField_preview.png",
+				"AR/specter_authored_mask_v1/SpecterVFXFactory_patch.swift.txt",
+				"AR/specter_authored_mask_v1/SpecterVFX_AuthoredField.metal",
+			);
+			target = D769F3DF2FEEDDF100A5F5E7 /* TheVeil */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D769F3E22FEEDDF100A5F5E7 /* TheVeil */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D7FACE012FEEDFA100A5F5E7 /* Exceptions for "TheVeil" folder in "TheVeil" target */,
+			);
 			path = TheVeil;
 			sourceTree = "<group>";
 		};

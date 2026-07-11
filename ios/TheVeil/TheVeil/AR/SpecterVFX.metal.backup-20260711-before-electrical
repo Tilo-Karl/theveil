@@ -1,0 +1,183 @@
+#include <metal_stdlib>
+#include <RealityKit/RealityKit.h>
+#include "SpectralNoise.metalh"
+using namespace metal;
+
+// 1. EXPONENTIAL GLOW DECAY: Replaces linear smoothstep.
+// Guarantees an infinitely sharp, intense core that smoothly diffuses out without clumping.
+float plasmaGlow(float d, float intensity, float falloff) {
+    return intensity * exp(-abs(d) * falloff);
+}
+
+// 2. RIDGED MULTIFRACTAL NOISE: Replaces cloud fBM.
+// Sharpens smooth noise waves into continuous, razor-thin electrical filaments.
+float electricalNoise(float3 p) {
+    float n = spectralFBM(p);
+    return 1.0 - abs(n - 0.5) * 2.0;
+}
+
+// 3. DOMAIN WARPING: Distorts the space matrix before shapes are drawn.
+// Forces geometric lines (like the mouth oval) to bend, crack, and whip like live current.
+float2 plasmaWarp(float2 p, float time, float phase) {
+    float3 coordA = float3(p * 2.5, time * 0.4 + phase);
+    float3 coordB = float3(p * 2.5 + float2(1.7, 3.2), time * 0.4 - phase);
+    
+    float2 shift = float2(
+        spectralFBM(coordA),
+        spectralFBM(coordB)
+    ) - 0.5;
+    
+    return p + shift * 0.16; // Whip radius optimized to distort lines without losing skull cohesion
+}
+
+float sdSegment(float2 p, float2 a, float2 b) {
+    float2 pa = p - a;
+    float2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.00001), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+float ellipseMetric(float2 p, float2 center, float2 radius) {
+    return length((p - center) / radius);
+}
+
+[[visible]]
+void specterGeometry(realitykit::geometry_parameters params) {
+    auto geometry = params.geometry();
+    float4 controls = params.uniforms().custom_parameter();
+    float time = params.uniforms().time();
+    float phase = controls.x;
+    float layer = controls.y;
+
+    float2 uv = geometry.uv0();
+    float2 p = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    p.x *= 0.72;
+
+    float edgeMask = smoothstep(0.1, 0.85, 1.0 - length(p * float2(0.9, 0.7)));
+
+    // High-frequency vertex tearing to mimic snapping plasma boundaries
+    float3 noiseCoord = float3(p * 4.0, time * 1.5 + phase);
+    float electricTear = electricalNoise(noiseCoord);
+    
+    float3 offset = float3(0.0, 0.0, (electricTear - 0.5) * 0.06 * edgeMask);
+    offset *= layer < 0.5 ? 1.3 : 0.4;
+    geometry.set_model_position_offset(offset);
+}
+
+[[visible]]
+void specterSurface(realitykit::surface_parameters params) {
+    auto geometry = params.geometry();
+    auto surface = params.surface();
+    float4 controls = params.uniforms().custom_parameter();
+    float time = params.uniforms().time();
+    float phase = controls.x;
+    float layer = controls.y;
+
+    float2 uv = geometry.uv0();
+    float2 baseP = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    baseP.x *= 0.72;
+
+    // Hard boundary protection to keep the edge completely clean from plane panel borders
+    float canvasBoundary = smoothstep(0.0, 0.3, 1.0 - length(baseP * float2(0.88, 0.65)));
+
+    // RUN THE COORDINATE MATRIX THROUGH THE PLASMA WARP
+    // Every facial feature calculated below will now automatically inherit electrical fracturing.
+    float2 warpedP = plasmaWarp(baseP, time * 0.7, phase);
+
+    // 1. SHREDDED ATMOSPHERIC BACKGROUND
+    float3 plasmaFieldCoord = float3(warpedP * 3.2, time * 0.8);
+    float plasmaField = electricalNoise(plasmaFieldCoord);
+    float backgroundShroud = smoothstep(0.15, 0.85, 1.0 - length(baseP * float2(0.92, 0.70))) * canvasBoundary;
+
+    // 2. COHESIVE SKULL & FACIAL ANATOMY (Bound tightly together in the warped domain)
+    float skullRing = abs(ellipseMetric(warpedP, float2(0.0, 0.12), float2(0.42, 0.65)) - 1.0);
+    float skullEnergy = plasmaGlow(skullRing, 1.2, 28.0);
+
+    // Structural connective tissues bridging eyes to mouth
+    float noseBridge = plasmaGlow(sdSegment(warpedP, float2(0.0, 0.25), float2(0.0, -0.05)), 1.4, 22.0);
+    float leftCheek = plasmaGlow(sdSegment(warpedP, float2(-0.38, 0.15), float2(-0.20, -0.30)), 1.1, 24.0);
+    float rightCheek = plasmaGlow(sdSegment(warpedP, float2(0.38, 0.15), float2(0.20, -0.30)), 1.1, 24.0);
+    float leftJaw = plasmaGlow(sdSegment(warpedP, float2(-0.20, -0.30), float2(-0.06, -0.55)), 1.1, 26.0);
+    float rightJaw = plasmaGlow(sdSegment(warpedP, float2(0.20, -0.30), float2(0.06, -0.55)), 1.1, 26.0);
+    
+    float angryBrow = max(
+        plasmaGlow(sdSegment(warpedP, float2(-0.30, 0.32), float2(-0.02, 0.18)), 1.5, 18.0),
+        plasmaGlow(sdSegment(warpedP, float2(0.02, 0.18), float2(0.30, 0.32)), 1.5, 18.0)
+    );
+
+    // Blinding Plasma Eye Cores
+    float2 leftEyeCenter = warpedP + float2(0.16, -0.20);
+    float2 rightEyeCenter = warpedP + float2(-0.16, -0.20);
+    float leftEyeDist = length(leftEyeCenter * float2(1.0, 1.3));
+    float rightEyeDist = length(rightEyeCenter * float2(1.0, 1.3));
+    
+    float eyeCores = plasmaGlow(leftEyeDist, 3.8, 45.0) + plasmaGlow(rightEyeDist, 3.8, 45.0);
+    float eyeHalos = plasmaGlow(leftEyeDist, 1.8, 12.0) + plasmaGlow(rightEyeDist, 1.8, 12.0);
+
+    // Nasal Cavity
+    float noseL = plasmaGlow(sdSegment(warpedP, float2(0.0, 0.12), float2(-0.04, -0.04)), 1.0, 26.0);
+    float noseR = plasmaGlow(sdSegment(warpedP, float2(0.0, 0.12), float2(0.04, -0.04)), 1.0, 26.0);
+    float noseCavity = max(noseL, noseR);
+
+    // 3. THE RAGGED BIOLOGICAL MAW (No longer a clean mathematical ellipse)
+    float mouthMetric = ellipseMetric(warpedP, float2(0.0, -0.30), float2(0.20, 0.26));
+    float mouthVoidMask = 1.0 - smoothstep(0.85, 1.05, mouthMetric);
+    float mouthOutline = plasmaGlow(abs(mouthMetric - 1.0), 1.5, 22.0);
+
+    // Dynamic, angled fang filaments that taper organically outwards
+    float angleFactor = warpedP.x * 2.5;
+    float upperFangs = smoothstep(-0.10, -0.32, warpedP.y) * abs(sin(warpedP.x * 28.0 + angleFactor + plasmaField * 1.5));
+    float lowerFangs = smoothstep(-0.52, -0.34, warpedP.y) * abs(sin(warpedP.x * 24.0 - angleFactor - plasmaField * 1.5));
+    float fangFilaments = plasmaGlow(1.0 - max(upperFangs, lowerFangs), 1.5, 18.0) * mouthVoidMask;
+
+    // 4. MAIN PLASMA CURRENT (High-frequency arcs snapping vertically down the core)
+    float3 arcCoord = float3(baseP * 7.0, time * 1.6);
+    float activeArcs = smoothstep(0.68, 0.95, electricalNoise(arcCoord)) * backgroundShroud;
+
+    // Consolidate structural outlines safely
+    float structuralFeatures =
+        skullEnergy * 0.4
+        + noseBridge * 0.6
+        + max(leftCheek, rightCheek) * 0.8
+        + max(leftJaw, rightJaw) * 0.8
+        + angryBrow * 1.3
+        + noseCavity * 0.9
+        + mouthOutline * 1.1
+        + fangFilaments * 1.3;
+
+    // 5. DEEP OBSIDIAN & IONIZED VIOLET PALETTE (Directly mapped from original artwork)
+    float3 obsidianVoid    = float3(0.010, 0.001, 0.025);
+    float3 deepSpecterPurp = float3(0.14, 0.01, 0.34);
+    float3 ionizedViolet   = float3(0.48, 0.02, 0.88);
+    float3 plasmaCyan      = float3(0.00, 0.75, 1.00);
+    float3 whiteHotCore    = float3(0.95, 0.92, 1.00);
+
+    // Color assembly
+    float3 finalColor = mix(obsidianVoid, deepSpecterPurp, plasmaField * backgroundShroud);
+    finalColor = mix(finalColor, ionizedViolet, structuralFeatures * 0.5);
+    
+    // Confine Cyan strictly to the razor-thin lightning highlights and active hot regions
+    finalColor = mix(finalColor, plasmaCyan, (activeArcs * 1.5 + eyeHalos * 0.5 + structuralFeatures * 0.25));
+    
+    // Super-bright, white-hot core energy mapping
+    finalColor = mix(finalColor, whiteHotCore, (eyeCores * 0.9 + activeArcs * structuralFeatures * 0.45));
+    
+    // Keep the throat interior pitch black while allowing fangs to pierce out brightly
+    finalColor = mix(finalColor, obsidianVoid * 0.05, mouthVoidMask * (1.0 - fangFilaments * 0.7));
+
+    // 6. LAYER COMPOSITING
+    if (layer < 0.5) {
+        // Shroud/Aura Layer
+        float auraAlpha = (plasmaField * 0.35 + activeArcs * 0.4) * backgroundShroud;
+        surface.set_emissive_color(half3(finalColor * (0.7 + plasmaField * 1.0) * controls.z));
+        surface.set_opacity(half(saturate(auraAlpha * controls.w)));
+        return;
+    }
+
+    // Main Feature Layer
+    float faceAlpha = saturate(structuralFeatures * 0.7 + eyeCores * 0.95 + activeArcs * 0.5 + plasmaField * 0.05);
+    faceAlpha *= canvasBoundary;
+
+    surface.set_emissive_color(half3(finalColor * (1.1 + eyeCores * 2.2) * controls.z));
+    surface.set_opacity(half(saturate(faceAlpha * controls.w)));
+}

@@ -6,6 +6,7 @@ import UIKit
 final class SpecterVFXFactory {
     private let faceMesh: MeshResource?
     private let faceMaterial: CustomMaterial?
+    private let faceFieldTexture: TextureResource?
     private let plasmaTexture = SpectralParticleTextureFactory.makeTexture(
         color: UIColor(red: 0.72, green: 0.12, blue: 1.0, alpha: 0.92),
         name: "specter-outline-plasma"
@@ -13,6 +14,7 @@ final class SpecterVFXFactory {
 
     init() {
         faceMesh = try? ProceduralSpecter.makeFacePlane()
+        faceFieldTexture = try? TextureResource.load(named: "SpecterFaceField")
 
         guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
             faceMaterial = nil
@@ -74,6 +76,9 @@ final class SpecterVFXFactory {
     ) -> ModelEntity {
         var material = baseMaterial
         material.custom.value = controls
+        if let faceFieldTexture {
+            material.custom.texture = .init(faceFieldTexture)
+        }
 
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.scale = scale

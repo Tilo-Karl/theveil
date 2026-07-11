@@ -1,0 +1,18 @@
+// SpecterVFXFactory.swift — material setup patch
+//
+// Add this property to SpecterVFXFactory:
+//
+// private let faceFieldTexture: TextureResource?
+//
+// In init(), load the authored mask:
+//
+// faceFieldTexture = try? TextureResource.load(named: "SpecterFaceField")
+//
+// After creating each CustomMaterial copy in makeLayer(), assign:
+//
+// if let faceFieldTexture {
+//     material.custom.texture = .init(faceFieldTexture)
+// }
+//
+// Keep the existing custom.value controls unchanged.
+// SpecterFaceField.png must be added to the Xcode target's asset resources.
