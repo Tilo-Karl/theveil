@@ -36,7 +36,7 @@ final class SpecterVFXFactory {
         let aura = makeLayer(
             mesh: faceMesh,
             baseMaterial: faceMaterial,
-            controls: SIMD4<Float>(phase, 0, 1.18, 0.88),
+            controls: SIMD4<Float>(phase, 0, 0, 0.88),
             scale: SIMD3<Float>(1.18, 1.18, 1.0),
             z: 0.025
         )
@@ -45,7 +45,7 @@ final class SpecterVFXFactory {
         let face = makeLayer(
             mesh: faceMesh,
             baseMaterial: faceMaterial,
-            controls: SIMD4<Float>(phase + 0.31, 1, 1.34, 0.98),
+            controls: SIMD4<Float>(phase + 0.31, 1, 0, 0.98),
             scale: SIMD3<Float>(1.0, 1.0, 1.0),
             z: 0
         )

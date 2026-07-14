@@ -281,6 +281,8 @@ final class ARSceneSpecterRenderer {
     }
 
     private func setAttackCharge(_ charge: Float, for layers: [ModelEntity]) {
+        let clampedCharge = min(max(charge, 0), 1)
+
         for layer in layers {
             guard
                 var model = layer.model,
@@ -290,7 +292,7 @@ final class ARSceneSpecterRenderer {
             }
 
             var controls = material.custom.value
-            controls.y = min(max(charge, 0), 1)
+            controls.z = clampedCharge
             material.custom.value = controls
             var materials = model.materials
             materials[0] = material

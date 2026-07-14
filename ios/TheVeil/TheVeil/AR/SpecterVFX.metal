@@ -129,27 +129,43 @@ void specterSurface(realitykit::surface_parameters params) {
     float time = params.uniforms().time();
     float phase = controls.x;
     float layer = controls.y;
+    float attackCharge = saturate(controls.z);
+    float visibility = saturate(controls.w);
+    float baseIntensity = layer < 0.5 ? 1.18 : 1.34;
+    float attackFlash = smoothstep(0.18, 1.0, attackCharge);
 
     float cycle = 0.5 + 0.5 * sin(time * 0.48 + phase);
     float formation = smoothstep(0.18, 0.90, cycle);
 
     float2 uv = geometry.uv0();
     float2 p = uv * 2.0 - 1.0;
+    float outerKill = smoothstep(
+        0.0, 0.18,
+        1.0 - length(p * float2(0.92, 0.72))
+    );
 
     auto faceTexture = params.textures().custom();
     constexpr sampler s(filter::linear, address::clamp_to_zero);
 
-    // Stable face coordinates.
-    float2 faceP = warpField(p, time, phase, mix(0.020, 0.004, formation));
+    // Stable face coordinates. The authored skull intentionally occupies a
+    // smaller region than the plasma field, leaving room for the surrounding
+    // cloud to breathe instead of letting the face define the whole plane.
+    float faceSampleScale = 3.0;
+    float2 faceP = warpField(p * faceSampleScale, time, phase, mix(0.020, 0.004, formation));
+    float faceWindow = 1.0 - smoothstep(
+        0.64,
+        0.96,
+        length(faceP * float2(0.84, 0.70))
+    );
     float2 faceUV = faceP * 0.5 + 0.5;
     float3 faceField = float3(faceTexture.sample(s, faceUV).rgb);
 
-    float faceMatter = saturate(faceField.r);
-    float faceHighlights = saturate(faceField.g);
-    float cavities = saturate(faceField.b);
+    float faceMatter = saturate(faceField.r) * faceWindow;
+    float faceHighlights = saturate(faceField.g) * faceWindow;
+    float cavities = saturate(faceField.b) * faceWindow;
 
-    float highlightEdge = fieldEdge(faceTexture, s, faceUV, 1);
-    float cavityEdge = fieldEdge(faceTexture, s, faceUV, 2);
+    float highlightEdge = fieldEdge(faceTexture, s, faceUV, 1) * faceWindow;
+    float cavityEdge = fieldEdge(faceTexture, s, faceUV, 2) * faceWindow;
 
     // Independent plasma coordinates.
     float2 plasmaP = warpField(
@@ -203,11 +219,19 @@ void specterSurface(realitykit::surface_parameters params) {
     float currentBody = pow(saturate(longCurrents), 1.55);
     float currentHalo = pow(saturate(longCurrents), 0.70);
 
+    float plasmaPresence = saturate(
+        plasmaMass * 1.35 +
+        currentBody * 0.22 +
+        currentHalo * 0.16
+    );
+    float plasmaCut = smoothstep(0.035, 0.16, plasmaPresence);
+
     float hardFace = pow(faceHighlights, mix(1.50, 1.08, formation));
     float whiteFaceCore = pow(faceHighlights, mix(2.45, 1.62, formation));
 
     // Slightly strengthen the authored hard detail.
-    whiteFaceCore *= 1.15;
+    hardFace *= 1.0 + attackFlash * 0.85;
+    whiteFaceCore *= 1.15 * (1.0 + attackFlash * 3.4);
 
     float reinforcement = saturate(
         hardFace * 0.90 +
@@ -220,14 +244,16 @@ void specterSurface(realitykit::surface_parameters params) {
         ridgedNoise(float3(faceP * 13.5, time * 0.90 + phase * 4.5))
     );
 
-    float attackPulse = smoothstep(0.72, 0.98, formation);
+    reinforcement *= 1.0 + attackFlash * 1.2;
+
+    float attackPulse = attackFlash;
 
     // Stronger cavity absorption.
     float cavityDark = saturate(
         cavities * mix(0.74, 1.00, formation) * 1.18
     );
 
-    float cavityRim = cavityEdge * (0.16 + attackPulse * 0.64);
+    float cavityRim = cavityEdge * (0.16 + attackPulse * 1.12);
 
     float3 obsidian = float3(0.003, 0.000, 0.010);
     float3 deepPurple = float3(0.060, 0.001, 0.165);
@@ -235,14 +261,32 @@ void specterSurface(realitykit::surface_parameters params) {
     float3 hotViolet = float3(0.730, 0.075, 0.920);
     float3 whiteHot = float3(1.000, 0.970, 1.000);
 
-    float3 color = obsidian;
+    float3 plasmaColor = obsidian;
 
     // Independent plasma — deliberately darker and less dominant.
-    color += deepPurple * plasmaMass * 0.72;
-    color += deepPurple * currentHalo * 0.28;
-    color += violet * currentBody * 0.48;
-    color += hotViolet * currentCore * 0.36;
-    color += whiteHot * currentCore * 0.46;
+    // The rear layer must remain plasma only; otherwise it becomes a second,
+    // shifted copy of the authored face.
+    plasmaColor += deepPurple * plasmaMass * 0.72;
+    plasmaColor += deepPurple * currentHalo * 0.28;
+    plasmaColor += violet * currentBody * 0.48;
+    plasmaColor += hotViolet * currentCore * 0.36;
+    plasmaColor += whiteHot * currentCore * 0.46;
+
+    if (layer < 0.5) {
+        // Rear plasma opacity reduced to avoid the glowing billboard effect.
+        float auraAlpha =
+            plasmaMass * 0.30 +
+            currentHalo * 0.075 +
+            currentBody * 0.045;
+
+        auraAlpha *= 0.60 * plasmaCut * outerKill;
+
+        surface.set_emissive_color(half3(plasmaColor * baseIntensity * (1.0 + attackFlash * 0.08)));
+        surface.set_opacity(half(saturate(auraAlpha * visibility)));
+        return;
+    }
+
+    float3 color = plasmaColor;
 
     // Stable authored face — remains the visual priority.
     color += deepPurple * faceMatter * 0.18;
@@ -261,28 +305,17 @@ void specterSurface(realitykit::surface_parameters params) {
         )
     );
 
-    if (layer < 0.5) {
-        // Rear plasma opacity reduced to avoid the glowing billboard effect.
-        float auraAlpha =
-            plasmaMass * 0.30 +
-            currentHalo * 0.075 +
-            currentBody * 0.045;
-
-        auraAlpha *= 0.60;
-
-        surface.set_emissive_color(half3(color * controls.z));
-        surface.set_opacity(half(saturate(auraAlpha * controls.w)));
-        return;
-    }
-
     float faceAlpha =
         faceMatter * 0.20 +
         hardFace * 0.60 +
         whiteFaceCore * 0.92 +
         reinforcement * 0.30 +
         cavityRim * 0.18 +
-        currentCore * 0.045;
+        currentCore * 0.045 * plasmaCut +
+        attackFlash * (faceHighlights * 0.34 + highlightEdge * 0.22 + cavityEdge * 0.16);
 
-    surface.set_emissive_color(half3(color * controls.z));
-    surface.set_opacity(half(saturate(faceAlpha * controls.w)));
+    faceAlpha *= outerKill;
+
+    surface.set_emissive_color(half3(color * baseIntensity * (1.0 + attackFlash * 0.42)));
+    surface.set_opacity(half(saturate(faceAlpha * visibility)));
 }
