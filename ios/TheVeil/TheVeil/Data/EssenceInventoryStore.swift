@@ -47,6 +47,13 @@ final class EssenceInventoryStore: ObservableObject {
         }
 
         defaults.set(true, forKey: integratedCellMigrationKey)
+
+        capacitorEssenceCount = equipment.capacitorCapacity
+        isIntegratedCellUnlocked = true
+        containmentCellEssenceCount = equipment.containmentCellCapacity
+        defaults.set(true, forKey: integratedCellUnlockedKey)
+        persistCapacitorCharge()
+        persistContainmentCellCharge()
     }
 
     func canCollect(_ essence: AmbientEssence) -> Bool {

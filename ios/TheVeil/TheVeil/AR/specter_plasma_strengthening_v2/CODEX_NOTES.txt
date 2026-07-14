@@ -1,0 +1,47 @@
+CODEX NOTES
+
+Purpose
+- Keep the successful authored face unchanged.
+- Strengthen only the surrounding purple plasma and moving electrical reinforcement.
+
+Use
+1. Keep SpecterFaceField.png from the authored-mask package.
+2. Replace the current Metal shader with SpecterVFX_PlasmaStrengthening.metal.
+3. Keep shader entry points named specterGeometry and specterSurface.
+4. Ensure CustomMaterial.custom.texture receives SpecterFaceField.
+5. Do not change combat, HUD, AR anchoring, or scanner logic.
+
+Texture channels
+- R: spectral matter/silhouette
+- G: hard facial highlights
+- B: cavities
+
+Factory setup
+- Add: private let faceFieldTexture: TextureResource?
+- Load: faceFieldTexture = try? TextureResource.load(named: "SpecterFaceField")
+- In makeLayer(), after copying the material:
+  if let faceFieldTexture {
+      material.custom.texture = .init(faceFieldTexture)
+  }
+
+Important
+- Do not rebuild the face with circles, ellipses, capsules, straight segments, or sine-wave teeth.
+- Do not add cyan fBM clouds.
+- The current formation cycle is automatic only for visual testing.
+- Approve the look before wiring formation to gameplay.
+
+Main tuning points
+- broadMatter multiplier: purple body density
+- fineFilaments multiplier: moving current amount
+- reinforcement multiplier: electricity hugging the authored face
+- facialCore multiplier: white-hot detail brightness
+- cavityDark multiplier: socket/nostril/maw darkness
+- auraAlpha: rear plasma opacity
+- faceAlpha: front face strength
+
+Later formation values
+- idle 0.15
+- alert 0.40
+- pre-attack 0.70
+- attack 1.00
+- recovery 0.20

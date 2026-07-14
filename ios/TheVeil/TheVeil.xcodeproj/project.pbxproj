@@ -25,10 +25,13 @@
 		D7FACE012FEEDFA100A5F5E7 /* Exceptions for "TheVeil" folder in "TheVeil" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"AR/specter_authored_mask_v1/README.txt",
-				"AR/specter_authored_mask_v1/SpecterFaceField_preview.png",
-				"AR/specter_authored_mask_v1/SpecterVFXFactory_patch.swift.txt",
-				"AR/specter_authored_mask_v1/SpecterVFX_AuthoredField.metal",
+				AR/specter_authored_mask_v1/README.txt,
+				AR/specter_authored_mask_v1/SpecterFaceField_preview.png,
+				AR/specter_authored_mask_v1/SpecterVFX_AuthoredField.metal,
+				AR/specter_authored_mask_v1/SpecterVFXFactory_patch.swift.txt,
+				AR/specter_plasma_strengthening_v2/CODEX_NOTES.txt,
+				AR/specter_plasma_strengthening_v2/README.txt,
+				AR/specter_plasma_strengthening_v2/SpecterVFX_PlasmaStrengthening.metal,
 			);
 			target = D769F3DF2FEEDDF100A5F5E7 /* TheVeil */;
 		};

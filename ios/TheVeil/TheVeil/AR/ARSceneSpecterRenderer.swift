@@ -8,6 +8,8 @@ final class ARSceneSpecterRenderer {
     private var renderedSpecter: RenderedSpecter?
     private let vfxFactory = SpecterVFXFactory()
     private let telegraphDuration: CFTimeInterval = 1.1
+    private let initialAttackDelay: CFTimeInterval = 4.8
+    private let attackCooldownRange: ClosedRange<CFTimeInterval> = 6.4...9.6
     private let boltSpeed: Float = 1.35
     private let boltHitRadius: Float = 0.22
 
@@ -55,7 +57,7 @@ final class ARSceneSpecterRenderer {
             bodyLayers: visual.bodyLayers,
             particleLayers: visual.particleLayers,
             motionPhase: specter.phase,
-            nextAttackAt: now + 2.4,
+            nextAttackAt: now + initialAttackDelay,
             nextRepositionAt: now + 1.4
         )
     }
@@ -102,7 +104,7 @@ final class ARSceneSpecterRenderer {
                 fireBolt(from: specter, toward: cameraPosition, at: time, in: arView)
                 specter.combatState = .roaming
                 specter.root.scale = SIMD3<Float>(repeating: 1)
-                specter.nextAttackAt = time + .random(in: 3.2...4.8)
+                specter.nextAttackAt = time + .random(in: attackCooldownRange)
                 specter.nextRepositionAt = time
                 setAttackCharge(0, for: specter.bodyLayers)
                 events.append(.boltFired)
