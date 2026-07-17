@@ -150,6 +150,34 @@ struct VeilogyEntry: Identifiable {
         ]
     )
 
+    static let ecto = VeilogyEntry(
+        title: "ECTO",
+        classification: "LESSER ESSENCE BEING",
+        threatLevel: "LOW",
+        body: "Ecto is a playful ectoplasmic organism formed from condensed spectral matter. It is not a human soul, and field researchers do not classify it as a ghost. It behaves more like a living globule of animated Veil Essence: curious, reactive and physically expressive.",
+        sections: [
+            VeilogySection(
+                title: "TEMPERAMENT",
+                body: "Ecto avoids direct hostility. It bounces between nearby surfaces, pauses to observe investigators and reacts visibly when scanned. Its movements suggest instinct and curiosity rather than malice."
+            ),
+            VeilogySection(
+                title: "FIELD APPEARANCE",
+                body: "Typical specimens appear as translucent ectoplasmic blobs with a bright internal core, floating facial features and a soft rim glow. The body compresses before jumping and ripples after landing."
+            ),
+            VeilogySection(
+                title: "RECOMMENDED PROCEDURE",
+                body: "1. Locate a stable horizontal surface.\n2. Observe movement and landing behaviour.\n3. Acquire Resonance Lock.\n4. Maintain beam contact until the entity collapses into extractable Essence.\n5. Do not classify as a human spirit."
+            )
+        ],
+        researchStatus: [
+            VeilogyResearchItem(title: "Visual morphology documented", isDocumented: true),
+            VeilogyResearchItem(title: "Surface interaction observed", isDocumented: true),
+            VeilogyResearchItem(title: "Non-hostile temperament observed", isDocumented: true),
+            VeilogyResearchItem(title: "Origin unknown", isDocumented: false),
+            VeilogyResearchItem(title: "Lifecycle unknown", isDocumented: false)
+        ]
+    )
+
     private static let defaultResearchStatus = [
         VeilogyResearchItem(title: "Primary classification documented", isDocumented: true),
         VeilogyResearchItem(title: "Known properties documented", isDocumented: true),

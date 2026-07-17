@@ -113,6 +113,16 @@ private struct BookOfVeilogyView: View {
                         isUpdated: hasIdentifiedWisp
                     )
                 }
+
+                NavigationLink {
+                    VeilogyEntryView(entry: VeilogyEntry.ecto)
+                } label: {
+                    VeilogyEntryRow(
+                        title: "ECTO",
+                        classification: "LESSER ESSENCE BEING",
+                        isUpdated: true
+                    )
+                }
             }
 
             Section("FOUNDATIONS") {

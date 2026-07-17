@@ -171,7 +171,11 @@ struct ARScannerScreen: View {
                                 get: { viewModel.debugPhaseCubeEnabled },
                                 set: { viewModel.setDebugPhaseCubeEnabled($0) }
                             ),
-                            traversalStatus: viewModel.debugTraversalStatus
+                            traversalStatus: viewModel.debugTraversalStatus,
+                            ectoStatus: viewModel.debugEctoStatus,
+                            spawnEctoAction: {
+                                viewModel.requestDebugEctoSpawn()
+                            }
                         )
                     }
                     .padding(.horizontal, 20)
@@ -374,6 +378,8 @@ private struct DebugScannerControls: View {
     @Binding var autoLock: Bool
     @Binding var phaseCube: Bool
     let traversalStatus: String
+    let ectoStatus: String
+    let spawnEctoAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -384,8 +390,20 @@ private struct DebugScannerControls: View {
                 Label("PHASE CUBE", systemImage: "cube.transparent")
             }
 
+            Button(action: spawnEctoAction) {
+                Label("SPAWN ECTO", systemImage: "drop.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.cyan)
+
             Text(traversalStatus)
                 .foregroundStyle(.cyan)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(ectoStatus)
+                .foregroundStyle(Color(red: 0.72, green: 0.42, blue: 1))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -394,7 +412,7 @@ private struct DebugScannerControls: View {
         .tint(Color(red: 0.7, green: 0.32, blue: 1))
         .foregroundStyle(.white)
         .padding(10)
-        .frame(width: 190)
+        .frame(width: 205)
         .background(Color.black.opacity(0.72))
         .overlay {
             RoundedRectangle(cornerRadius: 5)

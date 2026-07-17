@@ -32,6 +32,7 @@ extension ARScannerView {
         private let essenceRenderer = ARSceneEssenceRenderer()
         private let lostSoulRenderer = ARSceneLostSoulRenderer()
         private let specterRenderer = ARSceneSpecterRenderer()
+        private let ectoRenderer = ARSceneEctoRenderer()
         private let cameraPostProcessor = VeilCameraPostProcessor()
         private let planeCache = PlaneDetectionCache()
         private weak var arView: ARView?
@@ -46,6 +47,8 @@ extension ARScannerView {
         private var handledManifestationPulseEventCount = 0
         #if DEBUG
         private var debugForcedTargetID: AmbientEssence.ID?
+        private var debugForcedEctoTargetID: Ecto.ID?
+        private var handledDebugEctoSpawnEventCount = 0
         private let traversalDebugRenderer = ARSurfaceTraversalDebugRenderer()
         #endif
 
@@ -98,6 +101,7 @@ extension ARScannerView {
                 #if DEBUG
                 traversalDebugRenderer.remove(from: arView)
                 #endif
+                ectoRenderer.remove(from: arView)
                 specterRenderer.remove(from: arView)
             }
             viewModel.clearLockOn()
@@ -112,6 +116,18 @@ extension ARScannerView {
 
             let location = gesture.location(in: arView)
             let tappedEntity = arView.entity(at: location)
+
+            if
+                let ectoID = ectoRenderer.ectoID(for: tappedEntity),
+                ectoRenderer.isCapturable(id: ectoID)
+            {
+                if viewModel.debugAutoLockEnabled {
+                    debugForcedEctoTargetID = ectoID
+                    let update = resonanceLockTracker.forceLock(targetID: ectoID)
+                    viewModel.updateResonanceLock(update.state)
+                }
+                return
+            }
 
             guard
                 let essenceID = essenceRenderer.essenceID(for: tappedEntity),
@@ -180,6 +196,12 @@ extension ARScannerView {
             #if DEBUG
             updateSurfacePhaseDebug(
                 with: stablePlanes,
+                at: displayLink.timestamp,
+                in: arView
+            )
+            updateDebugEcto(
+                spawnPlaneAnchors: rawPlaneAnchors,
+                movementPlaneAnchors: stablePlanes,
                 at: displayLink.timestamp,
                 in: arView
             )
@@ -274,6 +296,8 @@ extension ARScannerView {
                 switch target {
                 case .essence(let id, _):
                     collectEssence(id: id, in: arView)
+                case .ecto(let id, _):
+                    collectEcto(id: id, in: arView)
                 case .specter:
                     viewModel.applyWeakResonancePulse()
                 case .lostSoul:
@@ -283,6 +307,49 @@ extension ARScannerView {
         }
 
         #if DEBUG
+        private func updateDebugEcto(
+            spawnPlaneAnchors: [ARPlaneAnchor],
+            movementPlaneAnchors: [ARPlaneAnchor],
+            at time: CFTimeInterval,
+            in arView: ARView
+        ) {
+            let didHandleSpawnRequest = viewModel.debugEctoSpawnEventCounter > handledDebugEctoSpawnEventCount
+            if didHandleSpawnRequest {
+                handledDebugEctoSpawnEventCount = viewModel.debugEctoSpawnEventCounter
+                debugForcedEctoTargetID = nil
+
+                let variant = EctoVariant.lime
+                if let ecto = ectoRenderer.spawn(
+                    variant: variant,
+                    planeAnchors: spawnPlaneAnchors,
+                    cameraTransform: arView.cameraTransform,
+                    at: time,
+                    in: arView
+                ) {
+                    viewModel.spawnDebugEcto(ecto)
+                    haptic.impactOccurred(intensity: 0.55)
+                    haptic.prepare()
+                } else {
+                    viewModel.ectoStore.clear()
+                    viewModel.setDebugEctoStatus("NO SURFACE")
+                }
+            }
+
+            if viewModel.ectoStore.activeEcto != nil {
+                let status = ectoRenderer.update(
+                    at: time,
+                    planeAnchors: movementPlaneAnchors,
+                    cameraPosition: arView.cameraTransform.translation,
+                    in: arView
+                )
+                viewModel.setDebugEctoStatus(status)
+            } else if !didHandleSpawnRequest,
+                      viewModel.debugEctoStatus != "ECTO READY",
+                      viewModel.debugEctoStatus != "NO SURFACE" {
+                viewModel.setDebugEctoStatus("ECTO READY")
+            }
+        }
+
         private func updateSurfacePhaseDebug(
             with planeAnchors: [ARPlaneAnchor],
             at time: CFTimeInterval,
@@ -325,6 +392,18 @@ extension ARScannerView {
 
                 self.debugForcedTargetID = nil
             }
+
+            if viewModel.debugAutoLockEnabled, let debugForcedEctoTargetID {
+                if
+                    viewModel.ectoStore.activeEcto?.id == debugForcedEctoTargetID,
+                    ectoRenderer.isCapturable(id: debugForcedEctoTargetID),
+                    let worldPosition = ectoRenderer.worldPosition(for: debugForcedEctoTargetID)
+                {
+                    return .ecto(id: debugForcedEctoTargetID, worldPosition: worldPosition)
+                }
+
+                self.debugForcedEctoTargetID = nil
+            }
             #endif
 
             if viewModel.canExtractEssence && !viewModel.visibleEssences.isEmpty {
@@ -356,6 +435,16 @@ extension ARScannerView {
                     }
                     .min { $0.screenDistance < $1.screenDistance }?
                     .target
+            }
+
+            if
+                let ecto = viewModel.ectoStore.activeEcto,
+                ectoRenderer.isCapturable(id: ecto.id),
+                let worldPosition = ectoRenderer.worldPosition(for: ecto.id),
+                simd_distance(cameraPosition, worldPosition) <= manifestationTrackingDistance,
+                aimedScreenDistance(to: worldPosition, center: center, in: arView) != nil
+            {
+                return .ecto(id: ecto.id, worldPosition: worldPosition)
             }
 
             if
@@ -413,6 +502,33 @@ extension ARScannerView {
                     signal += aimInfluence * 0.26 * manifestation
 
                     if manifestation > 0.28 && distance <= 2.5 && screenDistance <= 180 {
+                        anomalyDetected = true
+                    }
+                }
+
+                strongestSignal = max(strongestSignal, signal)
+            }
+
+            if
+                let ecto = viewModel.ectoStore.activeEcto,
+                let worldPosition = ectoRenderer.worldPosition(for: ecto.id)
+            {
+                let distance = Double(simd_distance(cameraPosition, worldPosition))
+                let proximity = 1 - min(max((distance - 0.45) / 2.8, 0), 1)
+                var signal = 0.2 + proximity * 0.48
+
+                if
+                    let screenPosition = arView.project(worldPosition),
+                    arView.bounds.insetBy(dx: -80, dy: -80).contains(screenPosition)
+                {
+                    let screenDistance = hypot(
+                        screenPosition.x - center.x,
+                        screenPosition.y - center.y
+                    )
+                    let aimInfluence = 1 - min(Double(screenDistance / 260), 1)
+                    signal += aimInfluence * 0.24
+
+                    if distance <= 2.8 && screenDistance <= 190 {
                         anomalyDetected = true
                     }
                 }
@@ -498,10 +614,29 @@ extension ARScannerView {
             essenceRenderer.collectEssence(id: id, from: arView)
         }
 
+        private func collectEcto(id: Ecto.ID, in arView: ARView) {
+            guard
+                ectoRenderer.isCapturable(id: id),
+                viewModel.collectEcto(id: id)
+            else {
+                return
+            }
+
+            haptic.impactOccurred()
+            haptic.prepare()
+            resonanceLockTracker.reset()
+            #if DEBUG
+            debugForcedEctoTargetID = nil
+            #endif
+
+            ectoRenderer.collectEcto(id: id, from: arView)
+        }
+
         private func clearVacuumLock() {
             #if DEBUG
-            let hadDebugTarget = debugForcedTargetID != nil
+            let hadDebugTarget = debugForcedTargetID != nil || debugForcedEctoTargetID != nil
             debugForcedTargetID = nil
+            debugForcedEctoTargetID = nil
             #else
             let hadDebugTarget = false
             #endif
@@ -518,12 +653,13 @@ extension ARScannerView {
 
 private enum ScannerTarget {
     case essence(id: AmbientEssence.ID, worldPosition: SIMD3<Float>)
+    case ecto(id: Ecto.ID, worldPosition: SIMD3<Float>)
     case lostSoul(id: LostSoul.ID, worldPosition: SIMD3<Float>)
     case specter(id: Specter.ID, worldPosition: SIMD3<Float>)
 
     var id: UUID {
         switch self {
-        case .essence(let id, _), .lostSoul(let id, _), .specter(let id, _):
+        case .essence(let id, _), .ecto(let id, _), .lostSoul(let id, _), .specter(let id, _):
             return id
         }
     }

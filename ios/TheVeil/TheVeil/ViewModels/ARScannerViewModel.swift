@@ -9,6 +9,7 @@ final class ARScannerViewModel: ObservableObject {
     let visibleEssenceStore: VisibleEssenceStore
     let lostSoulStore: LostSoulStore
     let specterStore: SpecterStore
+    let ectoStore: EctoStore
     let encounterStore: ManifestationEncounterStore
     let dischargeCircuitStore: DischargeCircuitStore
 
@@ -44,6 +45,8 @@ final class ARScannerViewModel: ObservableObject {
     @Published private(set) var debugAutoLockEnabled = false
     @Published private(set) var debugPhaseCubeEnabled = false
     @Published private(set) var debugTraversalStatus = "READY"
+    @Published private(set) var debugEctoStatus = "ECTO READY"
+    @Published private(set) var debugEctoSpawnEventCounter = 0
     #endif
 
     private var startupBeganAt: CFTimeInterval?
@@ -75,6 +78,7 @@ final class ARScannerViewModel: ObservableObject {
         self.visibleEssenceStore = VisibleEssenceStore()
         self.lostSoulStore = LostSoulStore()
         self.specterStore = SpecterStore()
+        self.ectoStore = EctoStore()
         self.encounterStore = ManifestationEncounterStore()
         self.dischargeCircuitStore = dischargeCircuitStore
         self.essenceFactory = AmbientEssenceFactory()
@@ -95,6 +99,7 @@ final class ARScannerViewModel: ObservableObject {
         visibleEssenceStore: VisibleEssenceStore,
         lostSoulStore: LostSoulStore,
         specterStore: SpecterStore,
+        ectoStore: EctoStore,
         encounterStore: ManifestationEncounterStore,
         dischargeCircuitStore: DischargeCircuitStore,
         essenceFactory: AmbientEssenceFactory
@@ -105,6 +110,7 @@ final class ARScannerViewModel: ObservableObject {
         self.visibleEssenceStore = visibleEssenceStore
         self.lostSoulStore = lostSoulStore
         self.specterStore = specterStore
+        self.ectoStore = ectoStore
         self.encounterStore = encounterStore
         self.dischargeCircuitStore = dischargeCircuitStore
         self.essenceFactory = essenceFactory
@@ -261,6 +267,7 @@ final class ARScannerViewModel: ObservableObject {
         visibleEssenceStore.replace(with: [])
         lostSoulStore.clear()
         specterStore.clear()
+        ectoStore.clear()
     }
 
     func collectEssence(id: AmbientEssence.ID) -> Bool {
@@ -294,6 +301,45 @@ final class ARScannerViewModel: ObservableObject {
         case .charged, .discharging, .manifestation:
             return false
         }
+
+        return true
+    }
+
+    func spawnDebugEcto(_ ecto: Ecto) {
+        ectoStore.spawn(ecto)
+        #if DEBUG
+        debugEctoStatus = "ECTO ACTIVE"
+        #endif
+    }
+
+    func collectEcto(id: Ecto.ID) -> Bool {
+        guard isScannerOperational else {
+            return false
+        }
+
+        guard let ecto = ectoStore.remove(id: id) else {
+            return false
+        }
+
+        clearLockOn()
+
+        let essence = AmbientEssence(
+            id: ecto.id,
+            position: ecto.position,
+            value: ecto.essenceValue,
+            radius: ecto.radius
+        )
+
+        if inventoryStore.canCollect(essence) {
+            _ = inventoryStore.collect(essence)
+            presentExtractionFeedback()
+        } else {
+            presentBriefNotice(.capacitorCharged, milliseconds: 900)
+        }
+
+        #if DEBUG
+        debugEctoStatus = "ECTO READY"
+        #endif
 
         return true
     }
@@ -387,6 +433,17 @@ final class ARScannerViewModel: ObservableObject {
             debugTraversalStatus = status
         }
     }
+
+    func requestDebugEctoSpawn() {
+        debugEctoSpawnEventCounter += 1
+        debugEctoStatus = "SPAWNING"
+    }
+
+    func setDebugEctoStatus(_ status: String) {
+        if debugEctoStatus != status {
+            debugEctoStatus = status
+        }
+    }
     #endif
 
     private func synchronizeResearchUnlocks() {
@@ -399,6 +456,7 @@ final class ARScannerViewModel: ObservableObject {
         visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
         lostSoulStore.clear()
         specterStore.clear()
+        ectoStore.clear()
         encounterStore.reset()
         gameplayPhase = .calmSearch
         awakenedExtractionCount = 0
@@ -419,6 +477,7 @@ final class ARScannerViewModel: ObservableObject {
         visibleEssenceStore.replace(with: essenceFactory.makeInitialField())
         lostSoulStore.clear()
         specterStore.clear()
+        ectoStore.clear()
         awakenedExtractionCount = 0
         gameplayPhase = inventoryStore.capacitorEssenceCount == inventoryStore.equipment.capacitorCapacity
             ? .charged
@@ -461,6 +520,7 @@ final class ARScannerViewModel: ObservableObject {
         clearLockOn()
         specterStore.clear()
         lostSoulStore.clear()
+        ectoStore.clear()
         encounterStore.endManifestationAsEscaped()
         scannerNotice = nil
         combatFeedback = .scannerFailsafe
