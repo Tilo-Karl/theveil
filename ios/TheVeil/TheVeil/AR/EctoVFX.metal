@@ -35,46 +35,128 @@ float3 ectoVariantCore(float index) {
     return float3(0.82, 1.00, 0.42);
 }
 
-float ridgedEcto(float3 p) {
-    float n = spectralFBM(p);
+float2 ectoCenteredUV(float2 uv) {
+    return float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+}
+
+float ectoSoftNoise(float3 p) {
+    float value = spectralNoise(p) * 0.68;
+    value += spectralNoise(p * 1.86 + float3(9.2, 4.7, 2.1)) * 0.24;
+    value += spectralNoise(p * 2.72 + float3(1.6, 8.4, 5.8)) * 0.08;
+    return value;
+}
+
+float ectoRidgedSoft(float3 p) {
+    float n = ectoSoftNoise(p);
     return 1.0 - abs(n * 2.0 - 1.0);
 }
 
-float bubbleField(float2 p, float time, float phase) {
-    float drift = spectralFBM(float3(p * 2.2, time * 0.16 + phase));
-    float fine = ridgedEcto(float3(p * 13.5 + drift * 0.7, time * 0.72 - phase));
-    return smoothstep(0.58, 0.98, fine);
+float ectoLowerWeight(float2 p) {
+    return 1.0 - smoothstep(-0.90, 0.18, p.y);
+}
+
+float ectoCenterMass(float2 p) {
+    return 1.0 - smoothstep(0.10, 0.88, length(p * float2(0.78, 0.72)));
+}
+
+float ectoSoftRim(float2 p) {
+    return smoothstep(0.50, 1.08, length(p * float2(0.82, 0.72)));
+}
+
+float ectoFresnel(float3 normal, float3 viewDirection, float power) {
+    return pow(saturate(1.0 - abs(dot(normal, viewDirection))), power);
+}
+
+float ectoBroadFlow(float2 p, float time, float phase) {
+    float2 drift = float2(
+        sin(time * 0.07 + phase) * 0.18,
+        cos(time * 0.055 + phase * 0.7) * 0.14
+    );
+    float cloudA = ectoSoftNoise(float3(p * 1.12 + drift, time * 0.035 + phase * 0.17));
+    float cloudB = ectoSoftNoise(float3(
+        p * 1.92 - drift * 0.62 + float2(2.2, 5.1),
+        -time * 0.048 + phase * 0.31
+    ));
+    return cloudA * 0.66 + cloudB * 0.34;
+}
+
+float ectoSparseBubbles(float2 p, float time, float phase) {
+    float2 drift = float2(
+        sin(time * 0.045 + phase * 1.3) * 0.16,
+        cos(time * 0.038 - phase) * 0.12
+    );
+    float bubbleSeed = ectoRidgedSoft(float3(p * 5.4 + drift, time * 0.024 + phase * 0.41));
+    float roundness = ectoRidgedSoft(float3(p * 8.2 - drift * 0.7, phase * 0.9 - time * 0.018));
+    float bodyMask = 1.0 - smoothstep(0.26, 0.96, length(p * float2(0.92, 0.82)));
+    return smoothstep(0.93, 0.992, bubbleSeed)
+        * smoothstep(0.44, 0.86, roundness)
+        * bodyMask;
+}
+
+float2 ectoFlowGradient(float2 p, float time, float phase, float scale, float speed) {
+    float2 drift = float2(
+        sin(time * 0.052 + phase) * 0.22,
+        cos(time * 0.047 - phase * 0.6) * 0.18
+    );
+    float2 q = p * scale + drift;
+    float epsilon = 0.035;
+    float xA = ectoSoftNoise(float3(q + float2(epsilon, 0.0), time * speed + phase * 0.11));
+    float xB = ectoSoftNoise(float3(q - float2(epsilon, 0.0), time * speed + phase * 0.11));
+    float yA = ectoSoftNoise(float3(q + float2(0.0, epsilon), -time * speed + phase * 0.17));
+    float yB = ectoSoftNoise(float3(q - float2(0.0, epsilon), -time * speed + phase * 0.17));
+    return float2(xA - xB, yA - yB) / (epsilon * 2.0);
+}
+
+float3 ectoGeometryOffset(float2 uv, float time, float phase, float reactivity, float strength) {
+    float2 p = ectoCenteredUV(uv);
+    float envelope = 1.0 - smoothstep(0.20, 1.34, length(p * float2(0.70, 0.84)));
+    float lowerSag = ectoLowerWeight(p);
+    float broadWobble = ectoBroadFlow(p, time, phase) - 0.5;
+    float rollingWobble = ectoSoftNoise(float3(
+        p * 2.5 + float2(1.7, 4.1),
+        -time * 0.115 + phase * 0.42
+    )) - 0.5;
+    float membraneRipple = (broadWobble * 0.016 + rollingWobble * 0.006)
+        * (1.0 + reactivity * 0.70)
+        * strength;
+
+    return float3(
+        sin(time * 0.86 + p.y * 3.8 + phase) * 0.0042 * envelope * strength,
+        -lowerSag * 0.014 * strength + membraneRipple * 0.26,
+        membraneRipple
+    );
 }
 
 [[visible]]
-void ectoGeometry(realitykit::geometry_parameters params) {
+void ectoOuterShellGeometry(realitykit::geometry_parameters params) {
     auto geometry = params.geometry();
     float4 controls = params.uniforms().custom_parameter();
-    float time = params.uniforms().time();
-    float phase = controls.x;
-    float reactivity = controls.z;
-
-    float2 uv = geometry.uv0();
-    float2 p = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-
-    float envelope = 1.0 - smoothstep(0.18, 1.32, length(p * float2(0.70, 0.84)));
-    float lowerSag = 1.0 - smoothstep(-0.90, 0.08, p.y);
-    float wobbleA = spectralFBM(float3(p * 2.4, time * 0.28 + phase));
-    float wobbleB = spectralFBM(float3(p * 6.2 + float2(1.7, 4.1), -time * 0.43 + phase));
-    float ripple = (wobbleA - 0.5) * 0.020 + (wobbleB - 0.5) * 0.009;
-    ripple *= 1.0 + reactivity * 0.95;
-
-    float3 offset = float3(
-        sin(time * 1.7 + p.y * 5.0 + phase) * 0.004 * envelope,
-        -lowerSag * 0.018 + ripple * 0.28,
-        ripple
+    float3 offset = ectoGeometryOffset(
+        geometry.uv0(),
+        params.uniforms().time(),
+        controls.x,
+        controls.z,
+        1.0
     );
-
     geometry.set_model_position_offset(offset);
 }
 
 [[visible]]
-void ectoSurface(realitykit::surface_parameters params) {
+void ectoInnerGelGeometry(realitykit::geometry_parameters params) {
+    auto geometry = params.geometry();
+    float4 controls = params.uniforms().custom_parameter();
+    float3 offset = ectoGeometryOffset(
+        geometry.uv0(),
+        params.uniforms().time(),
+        controls.x + 1.7,
+        controls.z * 0.72,
+        0.58
+    );
+    geometry.set_model_position_offset(offset);
+}
+
+[[visible]]
+void ectoOuterShellSurface(realitykit::surface_parameters params) {
     auto geometry = params.geometry();
     auto surface = params.surface();
     float4 controls = params.uniforms().custom_parameter();
@@ -84,67 +166,128 @@ void ectoSurface(realitykit::surface_parameters params) {
     float reactivity = controls.z;
     float variant = controls.w;
 
-    float2 uv = geometry.uv0();
-    float2 p = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    float2 p = ectoCenteredUV(geometry.uv0());
+    float3 normal = normalize(geometry.normal());
+    float3 viewDirection = normalize(geometry.view_direction());
 
-    float3 body = ectoVariantBody(variant);
-    body = mix(body, float3(0.42, 1.00, 0.70), 0.56);
-    float3 core = ectoVariantCore(variant);
-    float3 deep = body * 0.018 + float3(0.00, 0.010, 0.012);
-    float3 whiteHot = float3(0.94, 1.00, 0.92);
+    float3 shellTint = mix(ectoVariantBody(variant), float3(0.30, 1.00, 0.58), 0.54);
+    float3 paleGel = mix(float3(0.84, 1.00, 0.91), shellTint, 0.46);
+    float rim = ectoSoftRim(p);
+    float fresnel = ectoFresnel(normal, viewDirection, 2.15);
+    float edgeDensity = saturate(rim * 0.58 + fresnel * 0.72);
+    float lowerDensity = ectoLowerWeight(p);
+    float broadFlow = ectoBroadFlow(p, time, phase);
+    float bubbles = ectoSparseBubbles(p, time, phase);
+    float flowingBand = smoothstep(0.62, 0.92, broadFlow + rim * 0.12)
+        * (0.22 + edgeDensity * 0.78);
 
-    float lowerDensity = 1.0 - smoothstep(-0.92, 0.16, p.y);
-    float shellDistance = length(p * float2(0.80, 0.70));
-    float rim = smoothstep(0.48, 1.10, shellDistance);
-    float outerRim = smoothstep(0.76, 1.16, shellDistance);
-    float clearWindow = 1.0 - smoothstep(0.06, 0.76, shellDistance);
+    float2 gradient = ectoFlowGradient(p, time, phase, 1.22, 0.042);
+    gradient += float2(
+        sin(time * 0.11 + p.y * 2.4 + phase) * 0.16,
+        cos(time * 0.09 + p.x * 2.1 - phase) * 0.12
+    );
+    float3 tangentNormal = normalize(float3(gradient * 0.13, 1.0));
 
-    float lowFlow = spectralFBM(float3(p * 1.8, time * 0.12 + phase));
-    float midFlow = spectralFBM(float3(p * 4.8 + float2(2.2, 5.7), -time * 0.30 + phase * 1.6));
-    float fineBubbles = bubbleField(p, time, phase);
-    float causticNoise = ridgedEcto(float3(
-        p.x * 9.0 + sin(p.y * 4.0 + time * 0.25 + phase) * 0.65,
-        p.y * 14.0 - time * 0.44,
-        phase
+    float3 baseColor = paleGel * (0.22 + edgeDensity * 0.24 + flowingBand * 0.08);
+    baseColor += shellTint * (bubbles * 0.18 + lowerDensity * 0.035);
+
+    float opacity = 0.060
+        + edgeDensity * 0.205
+        + rim * 0.090
+        + lowerDensity * 0.030
+        + flowingBand * 0.034
+        + bubbles * 0.085
+        + reactivity * 0.028;
+    opacity *= visibility;
+
+    float roughness = 0.052 + broadFlow * 0.026 + bubbles * 0.022 + reactivity * 0.018;
+    float clearcoat = 0.86 + edgeDensity * 0.12 + reactivity * 0.06;
+    float clearcoatRoughness = 0.022 + (1.0 - flowingBand) * 0.026 + bubbles * 0.018;
+
+    float3 emissive = shellTint * (edgeDensity * 0.026 + bubbles * 0.030 + reactivity * 0.018);
+    emissive += float3(0.90, 1.00, 0.86) * flowingBand * 0.020;
+
+    surface.set_base_color(half3(baseColor));
+    surface.set_normal(tangentNormal);
+    surface.set_roughness(half(saturate(roughness)));
+    surface.set_metallic(half(0.0));
+    surface.set_clearcoat(half(saturate(clearcoat)));
+    surface.set_clearcoat_roughness(half(saturate(clearcoatRoughness)));
+    surface.set_clearcoat_normal(half3(tangentNormal));
+    surface.set_opacity(half(saturate(opacity)));
+    surface.set_emissive_color(half3(emissive * visibility));
+}
+
+[[visible]]
+void ectoInnerGelSurface(realitykit::surface_parameters params) {
+    auto geometry = params.geometry();
+    auto surface = params.surface();
+    float4 controls = params.uniforms().custom_parameter();
+    float time = params.uniforms().time();
+    float phase = controls.x;
+    float visibility = controls.y;
+    float reactivity = controls.z;
+    float variant = controls.w;
+
+    float2 p = ectoCenteredUV(geometry.uv0());
+    float3 normal = normalize(geometry.normal());
+    float3 viewDirection = normalize(geometry.view_direction());
+
+    float3 gelTint = mix(ectoVariantBody(variant), float3(0.20, 0.98, 0.44), 0.68);
+    float3 deepGel = mix(float3(0.015, 0.20, 0.085), gelTint * 0.38, 0.54);
+    float3 coreTint = ectoVariantCore(variant);
+
+    float lowerDensity = ectoLowerWeight(p);
+    float centerDensity = ectoCenterMass(p);
+    float upperLightness = smoothstep(0.20, 0.95, p.y);
+    float cloudA = ectoBroadFlow(p * 0.92 + float2(0.08, -0.04), time * 0.82, phase + 2.4);
+    float cloudB = ectoSoftNoise(float3(
+        p * 1.55 + float2(-1.2, 0.7),
+        -time * 0.030 + phase * 0.29
     ));
-    float floatingSpecs = ridgedEcto(float3(
-        p.x * 18.0 - time * 0.09,
-        p.y * 16.0 + time * 0.20,
-        phase * 1.7
-    ));
+    float clouds = smoothstep(0.28, 0.86, cloudA * 0.68 + cloudB * 0.32);
+    float weightedClouds = clouds * (0.60 + lowerDensity * 0.22 + centerDensity * 0.18);
+    float density = saturate(
+        centerDensity * 0.34
+            + lowerDensity * 0.42
+            + weightedClouds * 0.30
+            + reactivity * 0.06
+    );
+    density *= 1.0 - upperLightness * 0.30;
 
-    float caustics = smoothstep(0.72, 0.98, causticNoise) * (0.22 + lowerDensity * 0.42);
-    float suspendedBubbles = smoothstep(0.86, 0.995, floatingSpecs) * (0.26 + lowerDensity * 0.42);
-    float milkyMass = smoothstep(0.66, 0.98, lowFlow * 0.50 + midFlow * 0.32 + fineBubbles * 0.12);
-    milkyMass *= 1.0 - clearWindow * 0.82;
+    float coreRegion = exp(-length((p - float2(0.0, -0.38)) / float2(0.22, 0.18)) * 2.85);
+    float particles = smoothstep(0.945, 0.996, ectoRidgedSoft(float3(
+        p * 7.0 + float2(sin(time * 0.035 + phase), cos(time * 0.031 - phase)) * 0.18,
+        phase * 0.37 - time * 0.020
+    ))) * (0.52 + lowerDensity * 0.48);
 
-    float verticalCore = exp(-length((p - float2(0.0, -0.44)) / float2(0.17, 0.14)) * 2.75);
-    float hotCore = smoothstep(0.30, 0.96, verticalCore + fineBubbles * 0.10);
+    float fresnel = ectoFresnel(normal, viewDirection, 2.7);
+    float2 gradient = ectoFlowGradient(p, time, phase + 1.9, 0.88, 0.030);
+    float3 tangentNormal = normalize(float3(gradient * 0.052, 1.0));
 
-    float glossA = exp(-length((p - float2(-0.34, 0.36)) / float2(0.18, 0.052)) * 4.0);
-    float glossB = exp(-length((p - float2(0.28, 0.16)) / float2(0.12, 0.038)) * 4.8);
-    float glossC = exp(-length((p - float2(-0.16, -0.60)) / float2(0.24, 0.046)) * 3.2);
-    float gloss = (glossA + glossB * 0.55 + glossC * 0.38) * (0.45 + rim * 0.55);
+    float3 baseColor = mix(deepGel, gelTint, 0.38 + density * 0.46);
+    baseColor += gelTint * weightedClouds * 0.12;
+    baseColor += coreTint * coreRegion * 0.080;
+    baseColor += float3(0.84, 1.00, 0.72) * particles * 0.045;
 
-    float3 color = deep;
-    color += body * (outerRim * 0.46 + rim * 0.11 + milkyMass * 0.065 + lowerDensity * 0.036);
-    color += core * (hotCore * 1.10 + caustics * 0.36 + suspendedBubbles * 0.15 + outerRim * 0.56);
-    color += whiteHot * (gloss * 0.66 + hotCore * 0.40 + caustics * 0.18);
-    color *= 1.0 + reactivity * 0.34;
+    float opacity = 0.250
+        + density * 0.355
+        + lowerDensity * 0.105
+        + centerDensity * 0.085
+        + particles * 0.030
+        + fresnel * 0.045;
+    opacity *= 1.0 - upperLightness * 0.16;
+    opacity *= visibility;
 
-    float alpha =
-        0.012 +
-        outerRim * 0.36 +
-        rim * 0.10 +
-        lowerDensity * 0.032 +
-        milkyMass * 0.032 +
-        caustics * 0.056 +
-        hotCore * 0.022 +
-        gloss * 0.084;
-    alpha *= 1.0 - clearWindow * 0.68;
-    alpha += reactivity * 0.040;
-    alpha *= visibility;
+    float roughness = 0.38 + weightedClouds * 0.18 + lowerDensity * 0.08;
+    float3 emissive = coreTint * coreRegion * 0.135;
+    emissive += gelTint * particles * 0.020;
+    emissive *= visibility * (0.84 + reactivity * 0.34);
 
-    surface.set_emissive_color(half3(color * (1.05 + outerRim * 0.42 + hotCore * 0.34 + gloss * 0.28)));
-    surface.set_opacity(half(saturate(alpha)));
+    surface.set_base_color(half3(baseColor));
+    surface.set_normal(tangentNormal);
+    surface.set_roughness(half(saturate(roughness)));
+    surface.set_metallic(half(0.0));
+    surface.set_opacity(half(saturate(opacity)));
+    surface.set_emissive_color(half3(emissive));
 }

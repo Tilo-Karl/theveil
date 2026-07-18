@@ -4,24 +4,27 @@ import UIKit
 
 @MainActor
 final class EctoMaterialFactory {
-    private let bodyMaterial: CustomMaterial?
+    private let outerShellMaterial: CustomMaterial?
+    private let innerGelMaterial: CustomMaterial?
 
     init() {
         guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
-            bodyMaterial = nil
+            outerShellMaterial = nil
+            innerGelMaterial = nil
             return
         }
 
-        bodyMaterial = Self.makeBodyMaterial(library: library)
+        outerShellMaterial = Self.makeOuterShellMaterial(library: library)
+        innerGelMaterial = Self.makeInnerGelMaterial(library: library)
     }
 
-    func makeBodyMaterial(
+    func makeOuterShellMaterial(
         variant: EctoVariant,
         phase: Float,
         visibility: Float = 1,
         reactivity: Float = 0
     ) -> CustomMaterial? {
-        guard var material = bodyMaterial else {
+        guard var material = outerShellMaterial else {
             return nil
         }
 
@@ -34,24 +37,35 @@ final class EctoMaterialFactory {
         return material
     }
 
-    func makeBodyFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.68) -> UnlitMaterial {
-        var material = UnlitMaterial(color: bodyColor(for: variant, alpha: alpha))
+    func makeInnerGelMaterial(
+        variant: EctoVariant,
+        phase: Float,
+        visibility: Float = 1,
+        reactivity: Float = 0
+    ) -> CustomMaterial? {
+        guard var material = innerGelMaterial else {
+            return nil
+        }
+
+        material.custom.value = SIMD4<Float>(
+            phase,
+            visibility,
+            reactivity,
+            Float(variant.rawValue)
+        )
+        return material
+    }
+
+    func makeOuterShellFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.68) -> UnlitMaterial {
+        var material = UnlitMaterial(color: outerShellColor(for: variant, alpha: alpha))
         material.blending = .transparent(opacity: .init(scale: 1))
         material.readsDepth = true
         material.writesDepth = false
         return material
     }
 
-    func makeInnerGooFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.32) -> UnlitMaterial {
-        var material = UnlitMaterial(color: innerGooColor(for: variant, alpha: alpha))
-        material.blending = .transparent(opacity: .init(scale: 1))
-        material.readsDepth = true
-        material.writesDepth = false
-        return material
-    }
-
-    func makeShellHaloMaterial(variant: EctoVariant, alpha: CGFloat = 0.24) -> UnlitMaterial {
-        var material = UnlitMaterial(color: rimColor(for: variant, alpha: alpha))
+    func makeInnerGelFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.32) -> UnlitMaterial {
+        var material = UnlitMaterial(color: innerGelColor(for: variant, alpha: alpha))
         material.blending = .transparent(opacity: .init(scale: 1))
         material.readsDepth = true
         material.writesDepth = false
@@ -97,14 +111,16 @@ final class EctoMaterialFactory {
         )
     }
 
-    private static func makeBodyMaterial(library: any MTLLibrary) -> CustomMaterial? {
-        let surface = CustomMaterial.SurfaceShader(named: "ectoSurface", in: library)
-        let geometry = CustomMaterial.GeometryModifier(named: "ectoGeometry", in: library)
-        guard var material = try? CustomMaterial(
-            surfaceShader: surface,
-            geometryModifier: geometry,
-            lightingModel: .unlit
-        ) else {
+    private static func makeOuterShellMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(named: "ectoOuterShellSurface", in: library)
+        let geometry = CustomMaterial.GeometryModifier(named: "ectoOuterShellGeometry", in: library)
+        guard
+            var material = try? CustomMaterial(
+                surfaceShader: surface,
+                geometryModifier: geometry,
+                lightingModel: .clearcoat
+            )
+        else {
             return nil
         }
 
@@ -115,7 +131,27 @@ final class EctoMaterialFactory {
         return material
     }
 
-    private func bodyColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
+    private static func makeInnerGelMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(named: "ectoInnerGelSurface", in: library)
+        let geometry = CustomMaterial.GeometryModifier(named: "ectoInnerGelGeometry", in: library)
+        guard
+            var material = try? CustomMaterial(
+                surfaceShader: surface,
+                geometryModifier: geometry,
+                lightingModel: .lit
+            )
+        else {
+            return nil
+        }
+
+        material.blending = .transparent(opacity: .init(scale: 1))
+        material.faceCulling = .none
+        material.readsDepth = true
+        material.writesDepth = false
+        return material
+    }
+
+    private func outerShellColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
         switch variant {
         case .lime:
             return UIColor(red: 0.18, green: 0.98, blue: 0.46, alpha: alpha)
@@ -130,7 +166,7 @@ final class EctoMaterialFactory {
         }
     }
 
-    private func innerGooColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
+    private func innerGelColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
         switch variant {
         case .lime:
             return UIColor(red: 0.32, green: 1, blue: 0.54, alpha: alpha)
@@ -142,21 +178,6 @@ final class EctoMaterialFactory {
             return UIColor(red: 0.72, green: 1, blue: 0.36, alpha: alpha)
         case .golden:
             return UIColor(red: 0.74, green: 1, blue: 0.42, alpha: alpha)
-        }
-    }
-
-    private func rimColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
-        switch variant {
-        case .lime:
-            return UIColor(red: 0.72, green: 1, blue: 0.40, alpha: alpha)
-        case .cyan:
-            return UIColor(red: 0.50, green: 1, blue: 1, alpha: alpha)
-        case .amethyst:
-            return UIColor(red: 0.98, green: 0.48, blue: 1, alpha: alpha)
-        case .ember:
-            return UIColor(red: 0.88, green: 1, blue: 0.34, alpha: alpha)
-        case .golden:
-            return UIColor(red: 0.86, green: 1, blue: 0.38, alpha: alpha)
         }
     }
 

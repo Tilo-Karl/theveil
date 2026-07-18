@@ -7,6 +7,8 @@ import UIKit
 final class ARSceneEctoRenderer {
     private let materialFactory = EctoMaterialFactory()
     private let blobRadius: Float = 0.155
+    private let outerShellRestScale = SIMD3<Float>(0.90, 1.18, 0.84)
+    private let innerGelScaleRatio: Float = 0.90
     private let jumpPreparationDuration: CFTimeInterval = 0.34
     private let jumpDuration: CFTimeInterval = 0.82
     private let landingDuration: CFTimeInterval = 0.36
@@ -48,10 +50,9 @@ final class ARSceneEctoRenderer {
             id: ecto.id,
             anchor: anchor,
             root: visual.root,
-            body: visual.body,
-            bodyHalo: visual.bodyHalo,
+            outerShell: visual.outerShell,
+            innerGel: visual.innerGel,
             jellyLobes: visual.jellyLobes,
-            innerGoo: visual.innerGoo,
             core: visual.core,
             coreHalo: visual.coreHalo,
             eyes: visual.eyes,
@@ -312,29 +313,53 @@ final class ARSceneEctoRenderer {
             reactivity = 1
         }
 
-        if let material = materialFactory.makeBodyMaterial(
+        let shellWobble = sin(Float(time) * 1.18 + ecto.motionPhase) * 0.010
+        let shellSideFlow = cos(Float(time) * 0.86 + ecto.motionPhase * 0.6) * 0.006
+        ecto.outerShell.scale = SIMD3<Float>(
+            outerShellRestScale.x + shellWobble,
+            outerShellRestScale.y - shellWobble * 0.58,
+            outerShellRestScale.z + shellSideFlow
+        )
+        ecto.outerShell.position = .zero
+
+        let innerPhase = ecto.motionPhase + 1.35
+        let innerWobble = sin(Float(time) * 1.02 + innerPhase) * 0.0055
+        let innerSideFlow = cos(Float(time) * 0.72 + innerPhase) * 0.0038
+        let innerBaseScale = outerShellRestScale * innerGelScaleRatio
+        ecto.innerGel.scale = SIMD3<Float>(
+            innerBaseScale.x + innerWobble,
+            innerBaseScale.y - innerWobble * 0.45,
+            innerBaseScale.z + innerSideFlow
+        )
+        ecto.innerGel.position = SIMD3<Float>(
+            sin(Float(time) * 0.64 + innerPhase) * 0.0022,
+            cos(Float(time) * 0.58 + innerPhase) * 0.0018,
+            0
+        )
+
+        if let material = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float(time) + ecto.motionPhase,
-            visibility: 0.64,
+            visibility: 0.70,
             reactivity: reactivity
         ) {
-            ecto.body.model?.materials = [material]
+            ecto.outerShell.model?.materials = [material]
         } else {
-            ecto.body.model?.materials = [
-                materialFactory.makeBodyFallbackMaterial(variant: ecto.variant, alpha: 0.42)
+            ecto.outerShell.model?.materials = [
+                materialFactory.makeOuterShellFallbackMaterial(variant: ecto.variant, alpha: 0.24)
             ]
         }
 
-        if let haloMaterial = materialFactory.makeBodyMaterial(
+        if let material = materialFactory.makeInnerGelMaterial(
             variant: ecto.variant,
-            phase: Float(time) * 0.74 + ecto.motionPhase + 8.0,
-            visibility: 0.22,
-            reactivity: reactivity * 0.7
+            phase: Float(time) * 0.82 + innerPhase,
+            visibility: 0.76,
+            reactivity: reactivity * 0.66
         ) {
-            ecto.bodyHalo.model?.materials = [haloMaterial]
+            ecto.innerGel.model?.materials = [material]
         } else {
-            ecto.bodyHalo.model?.materials = [
-                materialFactory.makeShellHaloMaterial(variant: ecto.variant, alpha: 0.16)
+            ecto.innerGel.model?.materials = [
+                materialFactory.makeInnerGelFallbackMaterial(variant: ecto.variant, alpha: 0.48)
             ]
         }
 
@@ -372,61 +397,18 @@ final class ARSceneEctoRenderer {
                 scale.y - pulse * 0.026 + reactivity * 0.020,
                 scale.z + slide * 0.020
             )
-            if let material = materialFactory.makeBodyMaterial(
+            if let material = materialFactory.makeInnerGelMaterial(
                 variant: ecto.variant,
-                phase: Float(time) * (0.92 + Float(index) * 0.07) + localPhase,
-                visibility: 0.42,
-                reactivity: 0.12 + reactivity * 0.62
+                phase: Float(time) * (0.72 + Float(index) * 0.05) + localPhase + 2.2,
+                visibility: 0.38,
+                reactivity: 0.10 + reactivity * 0.48
             ) {
                 lobe.model?.materials = [material]
             } else {
                 lobe.model?.materials = [
-                    materialFactory.makeInnerGooFallbackMaterial(
+                    materialFactory.makeInnerGelFallbackMaterial(
                         variant: ecto.variant,
                         alpha: 0.30
-                    )
-                ]
-            }
-        }
-
-        let gooBases = [
-            SIMD3<Float>(-0.030, -0.052, 0.066),
-            SIMD3<Float>(0.040, -0.012, 0.050),
-            SIMD3<Float>(-0.024, 0.040, 0.060)
-        ]
-        let gooScales = [
-            SIMD3<Float>(0.92, 0.58, 0.76),
-            SIMD3<Float>(0.62, 0.84, 0.58),
-            SIMD3<Float>(0.52, 0.44, 0.52)
-        ]
-        for (index, goo) in ecto.innerGoo.enumerated() {
-            let localPhase = ecto.motionPhase + Float(index) * 1.73
-            let flow = sin(Float(time) * (1.2 + Float(index) * 0.18) + localPhase)
-            let counterFlow = cos(Float(time) * (0.95 + Float(index) * 0.22) - localPhase)
-            let base = gooBases[index % gooBases.count]
-            let scale = gooScales[index % gooScales.count]
-            goo.position = base + SIMD3<Float>(
-                flow * 0.010,
-                counterFlow * 0.008,
-                sin(Float(time) * 0.72 + localPhase) * 0.008
-            )
-            goo.scale = SIMD3<Float>(
-                scale.x + flow * 0.040 + reactivity * 0.035,
-                scale.y - flow * 0.030 + reactivity * 0.025,
-                scale.z + counterFlow * 0.030
-            )
-            if let material = materialFactory.makeBodyMaterial(
-                variant: ecto.variant,
-                phase: Float(time) * (0.86 + Float(index) * 0.08) + localPhase,
-                visibility: 0.34 + Float(index) * 0.045,
-                reactivity: 0.16 + reactivity * 0.65
-            ) {
-                goo.model?.materials = [material]
-            } else {
-                goo.model?.materials = [
-                    materialFactory.makeInnerGooFallbackMaterial(
-                        variant: ecto.variant,
-                        alpha: CGFloat(0.24 + Float(index) * 0.04)
                     )
                 ]
             }
@@ -606,47 +588,50 @@ final class ARSceneEctoRenderer {
         let root = Entity()
         root.name = "ecto-root:\(ecto.id.uuidString)"
 
-        let bodyMaterials: [any Material]
-        if let bodyMaterial = materialFactory.makeBodyMaterial(
+        let outerShellMaterials: [any Material]
+        if let outerShellMaterial = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float.random(in: 0...10),
-            visibility: 0.64
+            visibility: 0.70
         ) {
-            bodyMaterials = [bodyMaterial]
+            outerShellMaterials = [outerShellMaterial]
         } else {
-            bodyMaterials = [
-                materialFactory.makeBodyFallbackMaterial(variant: ecto.variant, alpha: 0.42)
+            outerShellMaterials = [
+                materialFactory.makeOuterShellFallbackMaterial(variant: ecto.variant, alpha: 0.24)
             ]
         }
 
         let bodyMesh = makeJellyBlobMesh(radius: ecto.radius)
-        let body = ModelEntity(
+        let outerShell = ModelEntity(
             mesh: bodyMesh,
-            materials: bodyMaterials
+            materials: outerShellMaterials
         )
-        body.name = "ecto-body:\(ecto.id.uuidString)"
-        body.scale = SIMD3<Float>(0.90, 1.18, 0.84)
-        disableRealityKitShadows(body)
-        root.addChild(body)
+        outerShell.name = "ecto-outer-shell:\(ecto.id.uuidString)"
+        outerShell.scale = outerShellRestScale
+        disableRealityKitShadows(outerShell)
 
-        let haloMaterials: [any Material]
-        if let haloMaterial = materialFactory.makeBodyMaterial(
+        let innerGelMaterials: [any Material]
+        if let innerGelMaterial = materialFactory.makeInnerGelMaterial(
             variant: ecto.variant,
-            phase: Float.random(in: 10...20),
-            visibility: 0.22
+            phase: Float.random(in: 20...30),
+            visibility: 0.76,
+            reactivity: 0.10
         ) {
-            haloMaterials = [haloMaterial]
+            innerGelMaterials = [innerGelMaterial]
         } else {
-            haloMaterials = [materialFactory.makeShellHaloMaterial(variant: ecto.variant)]
+            innerGelMaterials = [
+                materialFactory.makeInnerGelFallbackMaterial(variant: ecto.variant, alpha: 0.48)
+            ]
         }
-        let bodyHalo = ModelEntity(
-            mesh: makeJellyBlobMesh(radius: ecto.radius, inflate: 1.08),
-            materials: haloMaterials
+        let innerGel = ModelEntity(
+            mesh: bodyMesh,
+            materials: innerGelMaterials
         )
-        bodyHalo.name = "ecto-halo:\(ecto.id.uuidString)"
-        bodyHalo.scale = SIMD3<Float>(0.98, 1.22, 0.92)
-        disableRealityKitShadows(bodyHalo)
-        root.addChild(bodyHalo)
+        innerGel.name = "ecto-inner-gel:\(ecto.id.uuidString)"
+        innerGel.scale = outerShellRestScale * innerGelScaleRatio
+        innerGel.position = .zero
+        disableRealityKitShadows(innerGel)
+        root.addChild(innerGel)
 
         let jellyLobes = [
             makeJellyLobe(
@@ -708,37 +693,6 @@ final class ARSceneEctoRenderer {
         ]
         jellyLobes.forEach { root.addChild($0) }
 
-        let innerGoo = [
-            makeInnerGoo(
-                id: ecto.id,
-                variant: ecto.variant,
-                radius: ecto.radius,
-                phase: Float.random(in: 20...30),
-                position: SIMD3<Float>(-0.030, -0.052, 0.066),
-                scale: SIMD3<Float>(0.92, 0.58, 0.76),
-                visibility: 0.34
-            ),
-            makeInnerGoo(
-                id: ecto.id,
-                variant: ecto.variant,
-                radius: ecto.radius,
-                phase: Float.random(in: 30...40),
-                position: SIMD3<Float>(0.040, -0.012, 0.050),
-                scale: SIMD3<Float>(0.62, 0.84, 0.58),
-                visibility: 0.39
-            ),
-            makeInnerGoo(
-                id: ecto.id,
-                variant: ecto.variant,
-                radius: ecto.radius,
-                phase: Float.random(in: 40...50),
-                position: SIMD3<Float>(-0.024, 0.040, 0.060),
-                scale: SIMD3<Float>(0.52, 0.44, 0.52),
-                visibility: 0.43
-            )
-        ]
-        innerGoo.forEach { root.addChild($0) }
-
         let coreHalo = ModelEntity(
             mesh: .generateSphere(radius: ecto.radius * 0.25),
             materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.24)]
@@ -757,6 +711,8 @@ final class ARSceneEctoRenderer {
         core.position = SIMD3<Float>(0, -0.086, 0.086)
         disableRealityKitShadows(core)
         root.addChild(core)
+
+        root.addChild(outerShell)
 
         let eyes = [
             makeEye(id: ecto.id, xOffset: -0.052, variant: ecto.variant),
@@ -797,10 +753,9 @@ final class ARSceneEctoRenderer {
 
         return EctoVisual(
             root: root,
-            body: body,
-            bodyHalo: bodyHalo,
+            outerShell: outerShell,
+            innerGel: innerGel,
             jellyLobes: jellyLobes,
-            innerGoo: innerGoo,
             core: core,
             coreHalo: coreHalo,
             eyes: eyes,
@@ -897,43 +852,6 @@ final class ARSceneEctoRenderer {
         }
     }
 
-    private func makeInnerGoo(
-        id: Ecto.ID,
-        variant: EctoVariant,
-        radius: Float,
-        phase: Float,
-        position: SIMD3<Float>,
-        scale: SIMD3<Float>,
-        visibility: Float
-    ) -> ModelEntity {
-        let materials: [any Material]
-        if let material = materialFactory.makeBodyMaterial(
-            variant: variant,
-            phase: phase,
-            visibility: visibility,
-            reactivity: 0.18
-        ) {
-            materials = [material]
-        } else {
-            materials = [
-                materialFactory.makeInnerGooFallbackMaterial(
-                    variant: variant,
-                    alpha: CGFloat(visibility * 0.74)
-                )
-            ]
-        }
-
-        let goo = ModelEntity(
-            mesh: .generateSphere(radius: radius * 0.52),
-            materials: materials
-        )
-        goo.name = "ecto-inner-goo:\(id.uuidString)"
-        goo.position = position
-        goo.scale = scale
-        disableRealityKitShadows(goo)
-        return goo
-    }
-
     private func makeJellyLobe(
         id: Ecto.ID,
         variant: EctoVariant,
@@ -943,16 +861,16 @@ final class ARSceneEctoRenderer {
         scale: SIMD3<Float>
     ) -> ModelEntity {
         let materials: [any Material]
-        if let material = materialFactory.makeBodyMaterial(
+        if let material = materialFactory.makeInnerGelMaterial(
             variant: variant,
             phase: phase,
-            visibility: 0.42,
+            visibility: 0.38,
             reactivity: 0.18
         ) {
             materials = [material]
         } else {
             materials = [
-                materialFactory.makeInnerGooFallbackMaterial(
+                materialFactory.makeInnerGelFallbackMaterial(
                     variant: variant,
                     alpha: 0.28
                 )
@@ -1039,10 +957,9 @@ final class ARSceneEctoRenderer {
 
 private struct EctoVisual {
     let root: Entity
-    let body: ModelEntity
-    let bodyHalo: ModelEntity
+    let outerShell: ModelEntity
+    let innerGel: ModelEntity
     let jellyLobes: [ModelEntity]
-    let innerGoo: [ModelEntity]
     let core: ModelEntity
     let coreHalo: ModelEntity
     let eyes: [ModelEntity]
@@ -1055,10 +972,9 @@ private final class RenderedEcto {
     let id: Ecto.ID
     let anchor: AnchorEntity
     let root: Entity
-    let body: ModelEntity
-    let bodyHalo: ModelEntity
+    let outerShell: ModelEntity
+    let innerGel: ModelEntity
     let jellyLobes: [ModelEntity]
-    let innerGoo: [ModelEntity]
     let core: ModelEntity
     let coreHalo: ModelEntity
     let eyes: [ModelEntity]
@@ -1079,10 +995,9 @@ private final class RenderedEcto {
         id: Ecto.ID,
         anchor: AnchorEntity,
         root: Entity,
-        body: ModelEntity,
-        bodyHalo: ModelEntity,
+        outerShell: ModelEntity,
+        innerGel: ModelEntity,
         jellyLobes: [ModelEntity],
-        innerGoo: [ModelEntity],
         core: ModelEntity,
         coreHalo: ModelEntity,
         eyes: [ModelEntity],
@@ -1100,10 +1015,9 @@ private final class RenderedEcto {
         self.id = id
         self.anchor = anchor
         self.root = root
-        self.body = body
-        self.bodyHalo = bodyHalo
+        self.outerShell = outerShell
+        self.innerGel = innerGel
         self.jellyLobes = jellyLobes
-        self.innerGoo = innerGoo
         self.core = core
         self.coreHalo = coreHalo
         self.eyes = eyes
