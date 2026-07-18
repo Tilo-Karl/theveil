@@ -56,7 +56,7 @@ final class EctoMaterialFactory {
         return material
     }
 
-    func makeOuterShellFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.68) -> UnlitMaterial {
+    func makeOuterShellFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.22) -> UnlitMaterial {
         var material = UnlitMaterial(color: outerShellColor(for: variant, alpha: alpha))
         material.blending = .transparent(opacity: .init(scale: 1))
         material.readsDepth = true
@@ -64,7 +64,7 @@ final class EctoMaterialFactory {
         return material
     }
 
-    func makeInnerGelFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.32) -> UnlitMaterial {
+    func makeInnerGelFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.48) -> UnlitMaterial {
         var material = UnlitMaterial(color: innerGelColor(for: variant, alpha: alpha))
         material.blending = .transparent(opacity: .init(scale: 1))
         material.readsDepth = true

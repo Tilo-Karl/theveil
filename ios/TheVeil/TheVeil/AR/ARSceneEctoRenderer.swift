@@ -8,7 +8,7 @@ final class ARSceneEctoRenderer {
     private let materialFactory = EctoMaterialFactory()
     private let blobRadius: Float = 0.155
     private let outerShellRestScale = SIMD3<Float>(0.90, 1.18, 0.84)
-    private let innerGelScaleRatio: Float = 0.90
+    private let innerGelScaleRatio: Float = 0.965
     private let jumpPreparationDuration: CFTimeInterval = 0.34
     private let jumpDuration: CFTimeInterval = 0.82
     private let landingDuration: CFTimeInterval = 0.36
@@ -53,6 +53,7 @@ final class ARSceneEctoRenderer {
             outerShell: visual.outerShell,
             innerGel: visual.innerGel,
             jellyLobes: visual.jellyLobes,
+            bubbles: visual.bubbles,
             core: visual.core,
             coreHalo: visual.coreHalo,
             eyes: visual.eyes,
@@ -340,7 +341,7 @@ final class ARSceneEctoRenderer {
         if let material = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float(time) + ecto.motionPhase,
-            visibility: 0.70,
+            visibility: 0.88,
             reactivity: reactivity
         ) {
             ecto.outerShell.model?.materials = [material]
@@ -353,7 +354,7 @@ final class ARSceneEctoRenderer {
         if let material = materialFactory.makeInnerGelMaterial(
             variant: ecto.variant,
             phase: Float(time) * 0.82 + innerPhase,
-            visibility: 0.76,
+            visibility: 0.92,
             reactivity: reactivity * 0.66
         ) {
             ecto.innerGel.model?.materials = [material]
@@ -400,7 +401,7 @@ final class ARSceneEctoRenderer {
             if let material = materialFactory.makeInnerGelMaterial(
                 variant: ecto.variant,
                 phase: Float(time) * (0.72 + Float(index) * 0.05) + localPhase + 2.2,
-                visibility: 0.38,
+                visibility: 0.42,
                 reactivity: 0.10 + reactivity * 0.48
             ) {
                 lobe.model?.materials = [material]
@@ -414,12 +415,64 @@ final class ARSceneEctoRenderer {
             }
         }
 
+        let bubbleBases = [
+            SIMD3<Float>(-0.078, 0.104, 0.026),
+            SIMD3<Float>(0.080, 0.088, -0.018),
+            SIMD3<Float>(-0.024, 0.020, 0.068),
+            SIMD3<Float>(0.046, -0.044, 0.026),
+            SIMD3<Float>(-0.094, -0.070, -0.006),
+            SIMD3<Float>(0.092, -0.096, 0.044),
+            SIMD3<Float>(0.010, -0.150, 0.078),
+            SIMD3<Float>(-0.010, -0.024, -0.072),
+            SIMD3<Float>(0.108, 0.012, -0.044),
+            SIMD3<Float>(-0.110, 0.012, 0.042)
+        ]
+        let bubbleScales = [
+            SIMD3<Float>(0.70, 0.54, 0.62),
+            SIMD3<Float>(0.48, 0.64, 0.46),
+            SIMD3<Float>(0.44, 0.42, 0.58),
+            SIMD3<Float>(0.56, 0.46, 0.50),
+            SIMD3<Float>(0.38, 0.54, 0.42),
+            SIMD3<Float>(0.62, 0.48, 0.58),
+            SIMD3<Float>(0.44, 0.38, 0.54),
+            SIMD3<Float>(0.52, 0.42, 0.46),
+            SIMD3<Float>(0.36, 0.50, 0.40),
+            SIMD3<Float>(0.42, 0.36, 0.48)
+        ]
+        for (index, bubble) in ecto.bubbles.enumerated() {
+            let localPhase = ecto.motionPhase + Float(index) * 0.83
+            let drift = SIMD3<Float>(
+                sin(Float(time) * 0.32 + localPhase) * 0.0030,
+                cos(Float(time) * 0.27 + localPhase * 0.7) * 0.0024,
+                sin(Float(time) * 0.23 - localPhase) * 0.0026
+            )
+            let pulse = sin(Float(time) * 0.64 + localPhase) * 0.035
+            bubble.position = bubbleBases[index % bubbleBases.count] + drift
+            bubble.scale = bubbleScales[index % bubbleScales.count] * (1.0 + pulse)
+
+            if let material = materialFactory.makeOuterShellMaterial(
+                variant: ecto.variant,
+                phase: Float(time) * 0.31 + localPhase + 8.0,
+                visibility: 0.20 + Float(index % 3) * 0.035,
+                reactivity: 0.03 + reactivity * 0.16
+            ) {
+                bubble.model?.materials = [material]
+            } else {
+                bubble.model?.materials = [
+                    materialFactory.makeOuterShellFallbackMaterial(
+                        variant: ecto.variant,
+                        alpha: 0.10
+                    )
+                ]
+            }
+        }
+
         let corePulse = 1 + sin(Float(time) * 3.9 + ecto.motionPhase) * 0.16 + reactivity * 0.28
         ecto.core.scale = SIMD3<Float>(repeating: corePulse)
         ecto.coreHalo.scale = SIMD3<Float>(
-            0.72 + sin(Float(time) * 2.7 + ecto.motionPhase) * 0.10 + reactivity * 0.18,
-            0.58 + sin(Float(time) * 2.1 + ecto.motionPhase) * 0.08 + reactivity * 0.12,
-            0.76 + reactivity * 0.10
+            1.06 + sin(Float(time) * 2.7 + ecto.motionPhase) * 0.11 + reactivity * 0.20,
+            0.80 + sin(Float(time) * 2.1 + ecto.motionPhase) * 0.09 + reactivity * 0.14,
+            0.92 + reactivity * 0.12
         )
         ecto.core.position = SIMD3<Float>(
             sin(Float(time) * 1.4 + ecto.motionPhase) * 0.008,
@@ -436,7 +489,7 @@ final class ARSceneEctoRenderer {
         ecto.mouth.scale = SIMD3<Float>(
             1.0 + mouthOpen * 0.26,
             0.26 + mouthOpen * 0.88,
-            0.16
+            0.24
         )
 
         let blink = max(0.18, 1.0 - pow(max(0, sin(Float(time) * 1.6 + ecto.motionPhase)), 18.0) * 0.82)
@@ -444,9 +497,9 @@ final class ARSceneEctoRenderer {
             let eyeBob = sin(Float(time) * 2.0 + ecto.motionPhase + Float(index) * 1.7) * 0.004
             eye.position.y = 0.046 + eyeBob
             eye.scale = SIMD3<Float>(
-                0.98,
-                (1.14 + reactivity * 0.26) * blink,
-                0.20
+                0.88,
+                (1.08 + reactivity * 0.22) * blink,
+                0.30
             )
         }
 
@@ -592,7 +645,7 @@ final class ARSceneEctoRenderer {
         if let outerShellMaterial = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float.random(in: 0...10),
-            visibility: 0.70
+            visibility: 0.88
         ) {
             outerShellMaterials = [outerShellMaterial]
         } else {
@@ -614,7 +667,7 @@ final class ARSceneEctoRenderer {
         if let innerGelMaterial = materialFactory.makeInnerGelMaterial(
             variant: ecto.variant,
             phase: Float.random(in: 20...30),
-            visibility: 0.76,
+            visibility: 0.92,
             reactivity: 0.10
         ) {
             innerGelMaterials = [innerGelMaterial]
@@ -693,19 +746,113 @@ final class ARSceneEctoRenderer {
         ]
         jellyLobes.forEach { root.addChild($0) }
 
+        let bubbles = [
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 120...130),
+                position: SIMD3<Float>(-0.078, 0.104, 0.026),
+                scale: SIMD3<Float>(0.70, 0.54, 0.62),
+                visibility: 0.22
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 130...140),
+                position: SIMD3<Float>(0.080, 0.088, -0.018),
+                scale: SIMD3<Float>(0.48, 0.64, 0.46),
+                visibility: 0.18
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 140...150),
+                position: SIMD3<Float>(-0.024, 0.020, 0.068),
+                scale: SIMD3<Float>(0.44, 0.42, 0.58),
+                visibility: 0.24
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 150...160),
+                position: SIMD3<Float>(0.046, -0.044, 0.026),
+                scale: SIMD3<Float>(0.56, 0.46, 0.50),
+                visibility: 0.20
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 160...170),
+                position: SIMD3<Float>(-0.094, -0.070, -0.006),
+                scale: SIMD3<Float>(0.38, 0.54, 0.42),
+                visibility: 0.18
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 170...180),
+                position: SIMD3<Float>(0.092, -0.096, 0.044),
+                scale: SIMD3<Float>(0.62, 0.48, 0.58),
+                visibility: 0.24
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 180...190),
+                position: SIMD3<Float>(0.010, -0.150, 0.078),
+                scale: SIMD3<Float>(0.44, 0.38, 0.54),
+                visibility: 0.21
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 190...200),
+                position: SIMD3<Float>(-0.010, -0.024, -0.072),
+                scale: SIMD3<Float>(0.52, 0.42, 0.46),
+                visibility: 0.17
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 200...210),
+                position: SIMD3<Float>(0.108, 0.012, -0.044),
+                scale: SIMD3<Float>(0.36, 0.50, 0.40),
+                visibility: 0.18
+            ),
+            makeInternalBubble(
+                id: ecto.id,
+                variant: ecto.variant,
+                radius: ecto.radius,
+                phase: Float.random(in: 210...220),
+                position: SIMD3<Float>(-0.110, 0.012, 0.042),
+                scale: SIMD3<Float>(0.42, 0.36, 0.48),
+                visibility: 0.21
+            )
+        ]
+        bubbles.forEach { root.addChild($0) }
+
         let coreHalo = ModelEntity(
             mesh: .generateSphere(radius: ecto.radius * 0.25),
-            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.24)]
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.28)]
         )
         coreHalo.name = "ecto-core-halo:\(ecto.id.uuidString)"
         coreHalo.position = SIMD3<Float>(0, -0.086, 0.074)
-        coreHalo.scale = SIMD3<Float>(0.74, 0.56, 0.64)
+        coreHalo.scale = SIMD3<Float>(1.16, 0.88, 1.00)
         disableRealityKitShadows(coreHalo)
         root.addChild(coreHalo)
 
         let core = ModelEntity(
-            mesh: .generateSphere(radius: ecto.radius * 0.082),
-            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant)]
+            mesh: .generateSphere(radius: ecto.radius * 0.064),
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.54)]
         )
         core.name = "ecto-core:\(ecto.id.uuidString)"
         core.position = SIMD3<Float>(0, -0.086, 0.086)
@@ -722,14 +869,7 @@ final class ARSceneEctoRenderer {
             root.addChild(eye)
         }
 
-        let mouth = ModelEntity(
-            mesh: .generateSphere(radius: ecto.radius * 0.064),
-            materials: [materialFactory.makeMouthMaterial()]
-        )
-        mouth.name = "ecto-mouth:\(ecto.id.uuidString)"
-        mouth.position = SIMD3<Float>(0, -0.004, ecto.radius * 1.03)
-        mouth.scale = SIMD3<Float>(0.96, 0.28, 0.15)
-        disableRealityKitShadows(mouth)
+        let mouth = makeMouth(id: ecto.id, variant: ecto.variant, radius: ecto.radius)
         root.addChild(mouth)
 
         let dropletLayer = makeDropletLayer(variant: ecto.variant, radius: ecto.radius)
@@ -745,6 +885,16 @@ final class ARSceneEctoRenderer {
         contactShadow.scale = SIMD3<Float>(0.72, 0.020, 0.42)
         disableRealityKitShadows(contactShadow)
 
+        let contactGlow = ModelEntity(
+            mesh: .generateSphere(radius: ecto.radius),
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.10)]
+        )
+        contactGlow.name = "ecto-contact-glow:\(ecto.id.uuidString)"
+        contactGlow.position = SIMD3<Float>(0, 0.012, 0)
+        contactGlow.scale = SIMD3<Float>(1.28, 0.44, 1.18)
+        disableRealityKitShadows(contactGlow)
+        contactShadow.addChild(contactGlow)
+
         root.components.set(
             CollisionComponent(
                 shapes: [.generateSphere(radius: ecto.radius * 1.10)]
@@ -756,6 +906,7 @@ final class ARSceneEctoRenderer {
             outerShell: outerShell,
             innerGel: innerGel,
             jellyLobes: jellyLobes,
+            bubbles: bubbles,
             core: core,
             coreHalo: coreHalo,
             eyes: eyes,
@@ -767,14 +918,126 @@ final class ARSceneEctoRenderer {
 
     private func makeEye(id: Ecto.ID, xOffset: Float, variant: EctoVariant) -> ModelEntity {
         let eye = ModelEntity(
-            mesh: .generateSphere(radius: blobRadius * 0.112),
+            mesh: .generateSphere(radius: blobRadius * 0.104),
             materials: [materialFactory.makeEyeMaterial(variant: variant)]
         )
         eye.name = "ecto-eye:\(id.uuidString)"
-        eye.position = SIMD3<Float>(xOffset, 0.046, blobRadius * 1.03)
-        eye.scale = SIMD3<Float>(0.98, 1.14, 0.20)
+        eye.position = SIMD3<Float>(xOffset, 0.046, blobRadius * 0.90)
+        eye.scale = SIMD3<Float>(0.88, 1.08, 0.30)
         disableRealityKitShadows(eye)
+
+        let socketGlow = ModelEntity(
+            mesh: .generateSphere(radius: blobRadius * 0.145),
+            materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.14)]
+        )
+        socketGlow.name = "ecto-eye-socket-glow:\(id.uuidString)"
+        socketGlow.position = SIMD3<Float>(0, 0, -blobRadius * 0.020)
+        socketGlow.scale = SIMD3<Float>(1.16, 1.04, 0.10)
+        disableRealityKitShadows(socketGlow)
+        eye.addChild(socketGlow)
+
+        let sparkSide: Float = xOffset < 0 ? -1 : 1
+        let eyeSpark = ModelEntity(
+            mesh: .generateSphere(radius: blobRadius * 0.024),
+            materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.62)]
+        )
+        eyeSpark.name = "ecto-eye-inner-glow:\(id.uuidString)"
+        eyeSpark.position = SIMD3<Float>(blobRadius * 0.010 * sparkSide, blobRadius * 0.008, blobRadius * 0.022)
+        eyeSpark.scale = SIMD3<Float>(0.82, 0.82, 0.46)
+        disableRealityKitShadows(eyeSpark)
+        eye.addChild(eyeSpark)
+
+        let corneaMaterials: [any Material]
+        if let material = materialFactory.makeOuterShellMaterial(
+            variant: variant,
+            phase: Float.random(in: 220...230),
+            visibility: 0.26,
+            reactivity: 0.04
+        ) {
+            corneaMaterials = [material]
+        } else {
+            corneaMaterials = [
+                materialFactory.makeOuterShellFallbackMaterial(variant: variant, alpha: 0.10)
+            ]
+        }
+        let cornea = ModelEntity(
+            mesh: .generateSphere(radius: blobRadius * 0.128),
+            materials: corneaMaterials
+        )
+        cornea.name = "ecto-eye-cornea:\(id.uuidString)"
+        cornea.position = SIMD3<Float>(0, 0, blobRadius * 0.028)
+        cornea.scale = SIMD3<Float>(1.06, 1.00, 0.18)
+        disableRealityKitShadows(cornea)
+        eye.addChild(cornea)
+
         return eye
+    }
+
+    private func makeMouth(id: Ecto.ID, variant: EctoVariant, radius: Float) -> ModelEntity {
+        let mouth = ModelEntity(
+            mesh: .generateSphere(radius: radius * 0.064),
+            materials: [materialFactory.makeMouthMaterial()]
+        )
+        mouth.name = "ecto-mouth:\(id.uuidString)"
+        mouth.position = SIMD3<Float>(0, -0.004, radius * 0.91)
+        mouth.scale = SIMD3<Float>(0.96, 0.30, 0.24)
+        disableRealityKitShadows(mouth)
+
+        let mouthGlow = ModelEntity(
+            mesh: .generateSphere(radius: radius * 0.086),
+            materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.14)]
+        )
+        mouthGlow.name = "ecto-mouth-socket-glow:\(id.uuidString)"
+        mouthGlow.position = SIMD3<Float>(0, -radius * 0.002, -radius * 0.018)
+        mouthGlow.scale = SIMD3<Float>(1.22, 0.58, 0.12)
+        disableRealityKitShadows(mouthGlow)
+        mouth.addChild(mouthGlow)
+
+        let innerGlow = ModelEntity(
+            mesh: .generateSphere(radius: radius * 0.028),
+            materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.34)]
+        )
+        innerGlow.name = "ecto-mouth-inner-glow:\(id.uuidString)"
+        innerGlow.position = SIMD3<Float>(0, -radius * 0.018, radius * 0.020)
+        innerGlow.scale = SIMD3<Float>(1.32, 0.54, 0.30)
+        disableRealityKitShadows(innerGlow)
+        mouth.addChild(innerGlow)
+
+        return mouth
+    }
+
+    private func makeInternalBubble(
+        id: Ecto.ID,
+        variant: EctoVariant,
+        radius: Float,
+        phase: Float,
+        position: SIMD3<Float>,
+        scale: SIMD3<Float>,
+        visibility: Float
+    ) -> ModelEntity {
+        let materials: [any Material]
+        if let material = materialFactory.makeOuterShellMaterial(
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: 0.04
+        ) {
+            materials = [material]
+        } else {
+            materials = [
+                materialFactory.makeOuterShellFallbackMaterial(variant: variant, alpha: 0.10)
+            ]
+        }
+
+        let bubble = ModelEntity(
+            mesh: .generateSphere(radius: radius * 0.050),
+            materials: materials
+        )
+        bubble.name = "ecto-internal-bubble:\(id.uuidString)"
+        bubble.position = position
+        bubble.scale = scale
+        disableRealityKitShadows(bubble)
+        return bubble
     }
 
     private func makeJellyBlobMesh(radius: Float, inflate: Float = 1.0) -> MeshResource {
@@ -960,6 +1223,7 @@ private struct EctoVisual {
     let outerShell: ModelEntity
     let innerGel: ModelEntity
     let jellyLobes: [ModelEntity]
+    let bubbles: [ModelEntity]
     let core: ModelEntity
     let coreHalo: ModelEntity
     let eyes: [ModelEntity]
@@ -975,6 +1239,7 @@ private final class RenderedEcto {
     let outerShell: ModelEntity
     let innerGel: ModelEntity
     let jellyLobes: [ModelEntity]
+    let bubbles: [ModelEntity]
     let core: ModelEntity
     let coreHalo: ModelEntity
     let eyes: [ModelEntity]
@@ -998,6 +1263,7 @@ private final class RenderedEcto {
         outerShell: ModelEntity,
         innerGel: ModelEntity,
         jellyLobes: [ModelEntity],
+        bubbles: [ModelEntity],
         core: ModelEntity,
         coreHalo: ModelEntity,
         eyes: [ModelEntity],
@@ -1018,6 +1284,7 @@ private final class RenderedEcto {
         self.outerShell = outerShell
         self.innerGel = innerGel
         self.jellyLobes = jellyLobes
+        self.bubbles = bubbles
         self.core = core
         self.coreHalo = coreHalo
         self.eyes = eyes
