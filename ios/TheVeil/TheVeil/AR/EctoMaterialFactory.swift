@@ -6,16 +6,25 @@ import UIKit
 final class EctoMaterialFactory {
     private let outerShellMaterial: CustomMaterial?
     private let innerGelMaterial: CustomMaterial?
+    private let lobeMembraneMaterial: CustomMaterial?
+    private let bubbleMaterial: CustomMaterial?
+    private let corneaMaterial: CustomMaterial?
 
     init() {
         guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
             outerShellMaterial = nil
             innerGelMaterial = nil
+            lobeMembraneMaterial = nil
+            bubbleMaterial = nil
+            corneaMaterial = nil
             return
         }
 
         outerShellMaterial = Self.makeOuterShellMaterial(library: library)
         innerGelMaterial = Self.makeInnerGelMaterial(library: library)
+        lobeMembraneMaterial = Self.makeLobeMembraneMaterial(library: library)
+        bubbleMaterial = Self.makeBubbleMaterial(library: library)
+        corneaMaterial = Self.makeCorneaMaterial(library: library)
     }
 
     func makeOuterShellMaterial(
@@ -24,17 +33,13 @@ final class EctoMaterialFactory {
         visibility: Float = 1,
         reactivity: Float = 0
     ) -> CustomMaterial? {
-        guard var material = outerShellMaterial else {
-            return nil
-        }
-
-        material.custom.value = SIMD4<Float>(
-            phase,
-            visibility,
-            reactivity,
-            Float(variant.rawValue)
+        configuredMaterial(
+            outerShellMaterial,
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: reactivity
         )
-        return material
     }
 
     func makeInnerGelMaterial(
@@ -43,7 +48,68 @@ final class EctoMaterialFactory {
         visibility: Float = 1,
         reactivity: Float = 0
     ) -> CustomMaterial? {
-        guard var material = innerGelMaterial else {
+        configuredMaterial(
+            innerGelMaterial,
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: reactivity
+        )
+    }
+
+    func makeLobeMembraneMaterial(
+        variant: EctoVariant,
+        phase: Float,
+        visibility: Float = 1,
+        reactivity: Float = 0
+    ) -> CustomMaterial? {
+        configuredMaterial(
+            lobeMembraneMaterial,
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: reactivity
+        )
+    }
+
+    func makeBubbleMaterial(
+        variant: EctoVariant,
+        phase: Float,
+        visibility: Float = 1,
+        reactivity: Float = 0
+    ) -> CustomMaterial? {
+        configuredMaterial(
+            bubbleMaterial,
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: reactivity
+        )
+    }
+
+    func makeCorneaMaterial(
+        variant: EctoVariant,
+        phase: Float,
+        visibility: Float = 1,
+        reactivity: Float = 0
+    ) -> CustomMaterial? {
+        configuredMaterial(
+            corneaMaterial,
+            variant: variant,
+            phase: phase,
+            visibility: visibility,
+            reactivity: reactivity
+        )
+    }
+
+    private func configuredMaterial(
+        _ source: CustomMaterial?,
+        variant: EctoVariant,
+        phase: Float,
+        visibility: Float,
+        reactivity: Float
+    ) -> CustomMaterial? {
+        guard var material = source else {
             return nil
         }
 
@@ -53,22 +119,6 @@ final class EctoMaterialFactory {
             reactivity,
             Float(variant.rawValue)
         )
-        return material
-    }
-
-    func makeOuterShellFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.22) -> UnlitMaterial {
-        var material = UnlitMaterial(color: outerShellColor(for: variant, alpha: alpha))
-        material.blending = .transparent(opacity: .init(scale: 1))
-        material.readsDepth = true
-        material.writesDepth = false
-        return material
-    }
-
-    func makeInnerGelFallbackMaterial(variant: EctoVariant, alpha: CGFloat = 0.48) -> UnlitMaterial {
-        var material = UnlitMaterial(color: innerGelColor(for: variant, alpha: alpha))
-        material.blending = .transparent(opacity: .init(scale: 1))
-        material.readsDepth = true
-        material.writesDepth = false
         return material
     }
 
@@ -151,40 +201,70 @@ final class EctoMaterialFactory {
         return material
     }
 
-    private func outerShellColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
-        switch variant {
-        case .lime:
-            return UIColor(red: 0.18, green: 0.98, blue: 0.46, alpha: alpha)
-        case .cyan:
-            return UIColor(red: 0.12, green: 0.92, blue: 1, alpha: alpha)
-        case .amethyst:
-            return UIColor(red: 0.58, green: 0.34, blue: 1, alpha: alpha)
-        case .ember:
-            return UIColor(red: 0.55, green: 0.92, blue: 0.34, alpha: alpha)
-        case .golden:
-            return UIColor(red: 0.42, green: 1.00, blue: 0.36, alpha: alpha)
+    private static func makeLobeMembraneMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(named: "ectoLobeMembraneSurface", in: library)
+        let geometry = CustomMaterial.GeometryModifier(named: "ectoOuterShellGeometry", in: library)
+        guard
+            var material = try? CustomMaterial(
+                surfaceShader: surface,
+                geometryModifier: geometry,
+                lightingModel: .clearcoat
+            )
+        else {
+            return nil
         }
+
+        material.blending = .transparent(opacity: .init(scale: 1))
+        material.faceCulling = .back
+        material.readsDepth = true
+        material.writesDepth = false
+        return material
     }
 
-    private func innerGelColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
-        switch variant {
-        case .lime:
-            return UIColor(red: 0.32, green: 1, blue: 0.54, alpha: alpha)
-        case .cyan:
-            return UIColor(red: 0.28, green: 1, blue: 1, alpha: alpha)
-        case .amethyst:
-            return UIColor(red: 0.82, green: 0.48, blue: 1, alpha: alpha)
-        case .ember:
-            return UIColor(red: 0.72, green: 1, blue: 0.36, alpha: alpha)
-        case .golden:
-            return UIColor(red: 0.74, green: 1, blue: 0.42, alpha: alpha)
+    private static func makeBubbleMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(named: "ectoBubbleSurface", in: library)
+        let geometry = CustomMaterial.GeometryModifier(named: "ectoOuterShellGeometry", in: library)
+        guard
+            var material = try? CustomMaterial(
+                surfaceShader: surface,
+                geometryModifier: geometry,
+                lightingModel: .clearcoat
+            )
+        else {
+            return nil
         }
+
+        material.blending = .transparent(opacity: .init(scale: 1))
+        material.faceCulling = .back
+        material.readsDepth = true
+        material.writesDepth = false
+        return material
+    }
+
+    private static func makeCorneaMaterial(library: any MTLLibrary) -> CustomMaterial? {
+        let surface = CustomMaterial.SurfaceShader(named: "ectoCorneaSurface", in: library)
+        let geometry = CustomMaterial.GeometryModifier(named: "ectoOuterShellGeometry", in: library)
+        guard
+            var material = try? CustomMaterial(
+                surfaceShader: surface,
+                geometryModifier: geometry,
+                lightingModel: .clearcoat
+            )
+        else {
+            return nil
+        }
+
+        material.blending = .transparent(opacity: .init(scale: 1))
+        material.faceCulling = .back
+        material.readsDepth = true
+        material.writesDepth = false
+        return material
     }
 
     private func coreColor(for variant: EctoVariant, alpha: CGFloat) -> UIColor {
         switch variant {
         case .lime:
-            return UIColor(red: 0.76, green: 1, blue: 0.44, alpha: alpha)
+            return UIColor(red: 0.96, green: 1.00, blue: 0.24, alpha: alpha)
         case .cyan:
             return UIColor(red: 0.62, green: 1, blue: 1, alpha: alpha)
         case .amethyst:

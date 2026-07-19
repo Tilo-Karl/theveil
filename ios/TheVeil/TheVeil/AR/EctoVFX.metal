@@ -35,6 +35,18 @@ float3 ectoVariantCore(float index) {
     return float3(0.82, 1.00, 0.42);
 }
 
+float3 ectoArtworkGelGreen() {
+    return float3(0.42, 1.00, 0.10);
+}
+
+float3 ectoArtworkGlowSource() {
+    return float3(1.00, 1.78, 0.06);
+}
+
+float3 ectoArtworkGlowHot() {
+    return float3(1.00, 2.20, 0.35);
+}
+
 float2 ectoCenteredUV(float2 uv) {
     return float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
 }
@@ -152,6 +164,20 @@ float ectoLargeCloud(float2 p, float time, float phase, float scale, float speed
     return ectoSoftNoise(float3(p * scale + drift, time * speed + phase * 0.19 + offset));
 }
 
+float ectoViewVolumeThickness(float shapeRim, float3 normal, float3 viewDirection) {
+    float viewFacingDepth = saturate(abs(dot(normal, viewDirection)));
+    return saturate((1.0 - shapeRim) * viewFacingDepth);
+}
+
+float ectoDirectionalReflection(float3 normal, float3 viewDirection, float3 sourceDirection, float power) {
+    float3 reflectedView = normalize(reflect(-viewDirection, normal));
+    return pow(saturate(dot(reflectedView, normalize(sourceDirection))), power);
+}
+
+float ectoGrazingReflectionGate(float fresnel, float minValue, float maxValue) {
+    return smoothstep(minValue, maxValue, fresnel);
+}
+
 float3 ectoGeometryOffset(float2 uv, float time, float phase, float reactivity, float strength) {
     float2 p = ectoCenteredUV(uv);
     float envelope = 1.0 - smoothstep(0.20, 1.34, length(p * float2(0.70, 0.84)));
@@ -216,13 +242,17 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
     float3 viewDirection = normalize(geometry.view_direction());
 
     float3 variantGreen = ectoVariantBody(variant);
-    float3 shellTint = mix(variantGreen, float3(0.18, 0.92, 0.32), 0.18);
+    float3 shellTint = mix(variantGreen, ectoArtworkGelGreen(), 0.68);
+    float3 deepAbsorbingGreen = float3(0.006, 0.055, 0.020);
     float3 cyanReflection = float3(0.08, 0.70, 0.65);
-    float3 cleanReflection = float3(0.94, 1.00, 0.92);
-    float3 yellowGreen = float3(0.70, 1.00, 0.18);
+    float3 cleanReflection = float3(0.96, 1.00, 0.90);
+    float3 yellowGreen = ectoArtworkGelGreen();
+    float3 glowSource = ectoArtworkGlowSource();
 
     float shellDistance = length(p * float2(0.80, 0.70));
     float shapeRim = smoothstep(0.50, 1.08, shellDistance);
+    float volumeThickness = ectoViewVolumeThickness(shapeRim, normal, viewDirection);
+    float volumeAbsorption = pow(volumeThickness, 2.0);
     float fresnel = saturate(1.0 - abs(dot(normal, viewDirection)));
     float edgeThickness = pow(fresnel, 1.5);
     float thicknessRim = saturate(shapeRim * 0.55 + edgeThickness * 0.65);
@@ -237,6 +267,16 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
     float lowerGreen = ectoEllipseMask(p, float2(-0.18, -0.58), float2(0.34, 0.068), 0.52)
         * (0.22 + lowerDensity * 0.58 + thicknessRim * 0.20);
     float flowingHighlight = saturate(upperLeftCyan * 0.58 + upperRightWhite * 0.72 + lowerGreen * 0.36);
+    float3 absorptionColor = mix(yellowGreen, deepAbsorbingGreen, pow(volumeThickness, 1.5));
+    float edgeScatter = pow(1.0 - volumeThickness, 3.0) * (0.25 + shapeRim * 0.75);
+    float mainReflection = ectoDirectionalReflection(normal, viewDirection, float3(-0.42, 0.64, 0.58), 92.0);
+    float streakReflection = ectoDirectionalReflection(normal, viewDirection, float3(-0.74, 0.22, 0.58), 34.0);
+    float cyanReflectionHit = ectoDirectionalReflection(normal, viewDirection, float3(0.36, 0.58, 0.73), 42.0);
+    float reflectionGate = ectoGrazingReflectionGate(fresnel, 0.06, 0.52);
+    float directionalWhite = (mainReflection * 1.15 + streakReflection * upperRightWhite * 0.46)
+        * reflectionGate
+        * (0.34 + flowingHighlight * 0.26 + upperRightWhite * 0.40);
+    float directionalCyan = cyanReflectionHit * reflectionGate * (0.28 + upperLeftCyan * 0.72);
 
     float2 gradient = ectoFlowGradient(p, time, phase, 1.20, 0.038);
     gradient += float2(
@@ -246,45 +286,134 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
     float3 tangentNormal = normalize(float3(gradient * 0.058, 1.0));
 
     float3 baseColor = shellTint * (
-        thicknessRim * 0.24 +
-        shapeRim * 0.038 +
-        broadFlow * 0.026 +
-        lowerDensity * 0.012 +
-        bubbles * 0.025
+        thicknessRim * 0.026 +
+        shapeRim * 0.008 +
+        broadFlow * 0.006 +
+        lowerDensity * 0.003 +
+        bubbles * 0.004
     );
-    baseColor += cyanReflection * upperLeftCyan * 0.12;
-    baseColor += cleanReflection * upperRightWhite * 0.090;
-    baseColor += yellowGreen * lowerGreen * 0.075;
+    baseColor += cyanReflection * (upperLeftCyan * 0.08 + directionalCyan * 0.12);
+    baseColor += yellowGreen * lowerGreen * 0.034;
+    baseColor = mix(
+        baseColor,
+        absorptionColor * (0.026 + volumeAbsorption * 0.022) + shellTint * 0.006,
+        0.12
+    );
+    baseColor += cleanReflection * directionalWhite * 0.12;
 
-    float opacity = 0.026
-        + thicknessRim * 0.155
-        + shapeRim * 0.030
-        + broadFlow * 0.014
-        + flowingHighlight * 0.012
-        + lowerDensity * 0.010
-        + bubbles * 0.016
-        + reactivity * 0.012;
+    float opacity = 0.004
+        + volumeAbsorption * 0.010
+        + edgeThickness * 0.008
+        + broadFlow * 0.0015
+        + flowingHighlight * 0.0015
+        + reactivity * 0.0015;
     opacity *= visibility;
 
-    float roughness = 0.030 + broadFlow * 0.018 + bubbles * 0.012 + reactivity * 0.010 - flowingHighlight * 0.010;
-    float clearcoat = 0.88 + thicknessRim * 0.10 + upperRightWhite * 0.04;
-    float clearcoatRoughness = 0.016 + broadFlow * 0.016 + bubbles * 0.008 - flowingHighlight * 0.006;
+    float3 emissive = shellTint * (thicknessRim * 0.004 + lowerDensity * 0.002 + bubbles * 0.003);
+    emissive += cyanReflection * upperLeftCyan * 0.012;
+    emissive += glowSource * lowerGreen * 0.060;
+    emissive += glowSource * edgeScatter * 0.18;
+    emissive *= visibility * (0.94 + reactivity * 0.16);
 
-    float3 emissive = shellTint * (thicknessRim * 0.040 + lowerDensity * 0.010 + bubbles * 0.014);
-    emissive += cyanReflection * upperLeftCyan * 0.018;
-    emissive += cleanReflection * upperRightWhite * 0.020;
-    emissive += yellowGreen * lowerGreen * 0.016;
-    emissive *= visibility * (0.86 + reactivity * 0.18);
-
-    surface.set_base_color(half3(baseColor));
+    surface.set_base_color(half3(0.0));
     surface.set_normal(tangentNormal);
-    surface.set_roughness(half(saturate(roughness)));
+    surface.set_roughness(half(1.0));
     surface.set_metallic(half(0.0));
-    surface.set_clearcoat(half(saturate(clearcoat)));
-    surface.set_clearcoat_roughness(half(saturate(clearcoatRoughness)));
+    surface.set_clearcoat(half(0.0));
+    surface.set_clearcoat_roughness(half(1.0));
     surface.set_clearcoat_normal(half3(tangentNormal));
-    surface.set_opacity(half(saturate(opacity)));
-    surface.set_emissive_color(half3(emissive));
+    surface.set_opacity(half(0.0));
+    surface.set_emissive_color(half3(0.0));
+}
+
+void ectoReflectiveLayerSurface(realitykit::surface_parameters params, float role) {
+    auto geometry = params.geometry();
+    auto surface = params.surface();
+    float4 controls = params.uniforms().custom_parameter();
+    float time = params.uniforms().time();
+    float phase = controls.x;
+    float visibility = controls.y;
+    float reactivity = controls.z;
+    float variant = controls.w;
+
+    float2 p = ectoCenteredUV(geometry.uv0());
+    float3 normal = normalize(geometry.normal());
+    float3 viewDirection = normalize(geometry.view_direction());
+
+    float3 gelGreen = mix(ectoVariantBody(variant), ectoArtworkGelGreen(), 0.74);
+    float3 glowSource = ectoArtworkGlowSource();
+    float3 cyanReflection = float3(0.08, 0.70, 0.65);
+    float3 cleanReflection = float3(0.96, 1.00, 0.90);
+
+    float shellDistance = length(p * float2(0.80, 0.70));
+    float shapeRim = smoothstep(0.50, 1.08, shellDistance);
+    float fresnel = saturate(1.0 - abs(dot(normal, viewDirection)));
+    float edge = pow(fresnel, 1.7);
+    float flow = ectoBroadFlow(p, time, phase);
+    float sparseDetail = ectoSparseBubbles(p, time, phase);
+
+    float lobeRole = 1.0 - step(0.5, role);
+    float bubbleRole = step(0.5, role) * (1.0 - step(1.5, role));
+    float corneaRole = step(1.5, role);
+
+    float mainReflection = ectoDirectionalReflection(normal, viewDirection, float3(-0.42, 0.64, 0.58), 80.0);
+    float broadReflection = ectoDirectionalReflection(normal, viewDirection, float3(-0.66, 0.18, 0.72), 26.0);
+    float cyanHit = ectoDirectionalReflection(normal, viewDirection, float3(0.34, 0.56, 0.76), 34.0);
+    float reflectionGate = ectoGrazingReflectionGate(fresnel, 0.05, 0.55);
+
+    float lobeWhite = (mainReflection * 0.26 + broadReflection * 0.08) * reflectionGate;
+    float bubbleWhite = (mainReflection * 1.10 + broadReflection * 0.32) * reflectionGate;
+    float corneaWhite = (mainReflection * 1.42 + broadReflection * 0.18) * smoothstep(0.0, 0.38, fresnel);
+    float whiteHighlight = lobeWhite * lobeRole + bubbleWhite * bubbleRole + corneaWhite * corneaRole;
+    float cyanHighlight = cyanHit * reflectionGate * (0.18 + edge * 0.82);
+
+    float roleTint = lobeRole * 0.040 + bubbleRole * 0.010 + corneaRole * 0.006;
+    float roleEdge = lobeRole * 0.018 + bubbleRole * 0.012 + corneaRole * 0.006;
+    float roleOpacity = lobeRole * 0.020 + bubbleRole * 0.006 + corneaRole * 0.010;
+
+    float3 baseColor = gelGreen * (roleTint + edge * roleEdge + flow * 0.004);
+    baseColor += cyanReflection * (cyanHighlight * (0.08 + bubbleRole * 0.08) + sparseDetail * bubbleRole * 0.010);
+    baseColor += cleanReflection * whiteHighlight * (0.05 + bubbleRole * 0.10 + corneaRole * 0.16);
+
+    float opacity = roleOpacity
+        + edge * (lobeRole * 0.026 + bubbleRole * 0.030 + corneaRole * 0.012)
+        + whiteHighlight * (lobeRole * 0.020 + bubbleRole * 0.16 + corneaRole * 0.24)
+        + sparseDetail * bubbleRole * 0.018
+        + shapeRim * lobeRole * 0.006
+        + reactivity * 0.003;
+    opacity *= visibility;
+
+    float2 gradient = ectoFlowGradient(p, time, phase, 1.05 + bubbleRole * 0.80, 0.032);
+    float3 tangentNormal = normalize(float3(gradient * (0.022 + lobeRole * 0.018), 1.0));
+
+    float3 emissive = glowSource * edge * (lobeRole * 0.016 + bubbleRole * 0.008);
+    emissive += cyanReflection * cyanHighlight * (lobeRole * 0.012 + bubbleRole * 0.010);
+    emissive *= visibility * (0.70 + reactivity * 0.16);
+
+    surface.set_base_color(half3(0.0));
+    surface.set_normal(tangentNormal);
+    surface.set_roughness(half(1.0));
+    surface.set_metallic(half(0.0));
+    surface.set_clearcoat(half(0.0));
+    surface.set_clearcoat_roughness(half(1.0));
+    surface.set_clearcoat_normal(half3(tangentNormal));
+    surface.set_opacity(half(0.0));
+    surface.set_emissive_color(half3(0.0));
+}
+
+[[visible]]
+void ectoLobeMembraneSurface(realitykit::surface_parameters params) {
+    ectoReflectiveLayerSurface(params, 0.0);
+}
+
+[[visible]]
+void ectoBubbleSurface(realitykit::surface_parameters params) {
+    ectoReflectiveLayerSurface(params, 1.0);
+}
+
+[[visible]]
+void ectoCorneaSurface(realitykit::surface_parameters params) {
+    ectoReflectiveLayerSurface(params, 2.0);
 }
 
 [[visible]]
@@ -302,14 +431,18 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
 
-    float3 deepGreen = float3(0.02, 0.18, 0.06);
-    float3 bodyGreen = mix(float3(0.18, 0.85, 0.30), ectoVariantBody(variant), 0.20);
-    float3 luminousGreen = float3(0.70, 1.00, 0.18);
+    float3 deepGreen = float3(0.0015, 0.012, 0.004);
+    float3 bodyGreen = float3(0.010, 0.048, 0.006);
+    float3 luminousGreen = ectoArtworkGelGreen();
+    float3 glowSource = ectoArtworkGlowSource();
+    float3 glowHot = ectoArtworkGlowHot();
     float3 cyanGreen = float3(0.08, 0.70, 0.65);
-    float3 cleanReflection = float3(0.94, 1.00, 0.92);
+    float3 coreGlowColor = mix(glowSource, ectoVariantCore(variant), step(0.5, variant) * 0.35);
 
     float shellDistance = length(p * float2(0.80, 0.70));
     float shapeRim = smoothstep(0.50, 1.08, shellDistance);
+    float volumeThickness = ectoViewVolumeThickness(shapeRim, normal, viewDirection);
+    float volumeAbsorption = pow(volumeThickness, 2.0);
     float fresnel = saturate(1.0 - abs(dot(normal, viewDirection)));
     float thicknessRim = saturate(shapeRim * 0.55 + pow(fresnel, 1.5) * 0.65);
     float lowerWeight = ectoLowerWeight(p);
@@ -317,6 +450,7 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float interior = ectoInteriorMask(p);
 
     float2 warpedP = p + ectoLargeWarp(p, time, phase);
+    float internalDensityPattern = ectoLargeCloud(warpedP, time, phase, 0.85, 0.015, 0.0);
     float layerA = ectoLargeCloud(warpedP, time, phase + 0.13, 0.65, 0.012, 0.0);
     float layerB = ectoLargeCloud(warpedP + float2(0.34, -0.18), time, phase + 1.10, 1.05, 0.020, 2.4);
     float layerC = ectoLargeCloud(warpedP - float2(0.21, 0.32), time, phase - 0.70, 1.55, 0.026, 4.8);
@@ -334,11 +468,7 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float cyanMassMask = smoothstep(0.55, 0.80, ectoLargeCloud(warpedP + float2(0.10, 0.44), time, phase - 1.30, 0.78, 0.016, 5.6))
         * (0.42 + (1.0 - lowerWeight) * 0.30 + thicknessRim * 0.28);
 
-    float broadGlow = exp(-length((p - float2(0.0, -0.12)) / float2(0.75, 0.88)) * 1.35);
-    float hotGlow = exp(-length((p - float2(0.0, -0.38)) / float2(0.24, 0.20)) * 2.5);
-    float distributedGlow = broadGlow * 0.55 + hotGlow * 0.45;
-    float scatteredGlow = distributedGlow * (0.35 + thickPatch * 0.45 + brightMassMask * 0.40);
-    scatteredGlow *= 1.0 - clearPatch * 0.25;
+    float hotGlow = exp(-length((p - float2(0.0, -0.36)) / float2(0.42, 0.34)) * 1.42);
 
     float lobeA = ectoEllipseMask(p + float2(sin(time * 0.018 + phase) * 0.025, cos(time * 0.015) * 0.018), float2(-0.30, 0.12), float2(0.24, 0.38), 0.34);
     float lobeB = ectoEllipseMask(p + float2(cos(time * 0.014 + phase) * 0.020, -sin(time * 0.017) * 0.015), float2(0.25, -0.04), float2(0.22, 0.34), 0.36);
@@ -361,20 +491,19 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
         causticP.y * 5.2 - time * 0.060,
         phase * 0.31
     ));
-    float causticMask = smoothstep(0.78, 0.96, causticBase)
-        * (0.28 + thickPatch * 0.32 + lowerWeight * 0.22 + thicknessRim * 0.30 + faceGlowMask * 0.26)
-        * (1.0 - clearPatch * 0.55)
+    float causticMask = smoothstep(0.72, 0.92, causticBase)
+        * (0.40 + thickPatch * 0.36 + lowerWeight * 0.22 + thicknessRim * 0.36 + faceGlowMask * 0.44)
+        * (1.0 - clearPatch * 0.38)
         * (0.42 + interior * 0.58);
+    float causticVeins = smoothstep(0.84, 0.972, causticBase)
+        * (0.36 + thicknessRim * 0.36 + lowerWeight * 0.18 + faceGlowMask * 0.42)
+        * (1.0 - clearPatch * 0.24)
+        * interior;
 
     float speckA = spectralNoise(float3(warpedP * 17.5 + float2(0.7, 4.2), time * 0.040 + phase * 0.23));
     float speckB = spectralNoise(float3(warpedP * 29.0 + float2(6.1, 1.8), -time * 0.033 + phase * 0.47));
-    float commonSpecks = smoothstep(0.965, 0.997, speckA * 0.72 + speckB * 0.28) * interior;
-    float brightSpecks = smoothstep(0.988, 0.999, speckB) * interior;
-
-    float shaderBubbles = bubbleField(p * 0.92 + float2(0.11, -0.07), time * 0.16, phase)
-        * (0.28 + interior * 0.54)
-        * (1.0 - leftEyeGlow * 0.70)
-        * (1.0 - rightEyeGlow * 0.70);
+    float commonSpecks = smoothstep(0.926, 0.992, speckA * 0.70 + speckB * 0.30) * interior;
+    float brightSpecks = smoothstep(0.970, 0.998, speckB) * interior;
 
     float upperLeftCyan = ectoEllipseMask(p, float2(-0.34, 0.38), float2(0.32, 0.088), 0.55)
         * (0.20 + thicknessRim * 0.52);
@@ -383,50 +512,65 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float lowerGreenHighlight = ectoEllipseMask(p, float2(-0.12, -0.60), float2(0.34, 0.070), 0.52)
         * (0.22 + lowerWeight * 0.54);
 
-    float density = centerMass * 0.10
-        + lowerWeight * 0.16
-        + thickPatch * 0.30
-        + darkMassMask * 0.10
-        + brightMassMask * 0.070
-        + gelLobes * 0.14
-        + causticMask * 0.035
-        + scatteredGlow * 0.040
-        - clearPatch * 0.25
-        + reactivity * 0.020;
-    density = saturate(density);
+    float hugeThickness = volumeAbsorption * 0.38
+        + lowerWeight * 0.18
+        + centerMass * 0.12
+        + thickPatch * 0.18
+        + darkMassMask * 0.24
+        + gelLobes * 0.060
+        + internalDensityPattern * 0.035
+        - clearPatch * 0.42
+        + reactivity * 0.012;
+    hugeThickness = saturate(hugeThickness);
+    float darkDepth = saturate(hugeThickness * 0.82 + darkMassMask * 0.32 + lowerWeight * 0.10);
+    float brightStructure = saturate(causticVeins + causticMask * 0.24 + brightMassMask * 0.20);
+    float particleField = saturate(commonSpecks * 0.55 + brightSpecks);
 
     float2 gradient = ectoFlowGradient(p, time, phase + 1.9, 0.92, 0.028);
-    gradient += float2(causticMask - 0.5, thickPatch - clearPatch) * 0.030;
+    gradient += float2(causticVeins - 0.5, hugeThickness - clearPatch) * 0.030;
     float3 tangentNormal = normalize(float3(gradient * 0.044, 1.0));
 
-    float3 color = deepGreen * (0.18 + darkMassMask * 0.84 + lowerWeight * 0.25);
-    color += bodyGreen * (0.30 + density * 0.56 + thickPatch * 0.22 + gelLobes * 0.18);
-    color += luminousGreen * (brightMassMask * 0.34 + scatteredGlow * 0.18 + causticMask * 0.16 + lowerGreenHighlight * 0.08);
-    color += cyanGreen * (cyanMassMask * 0.30 + upperLeftCyan * 0.16);
-    color += cleanReflection * upperRightWhite * 0.10;
-    color = mix(color, bodyGreen * 0.16 + cyanGreen * 0.025, clearPatch * 0.46);
-    color *= 1.0 + reactivity * 0.18;
+    float edgeScatter = pow(1.0 - volumeThickness, 3.0) * (0.30 + shapeRim * 0.70);
+    float lightEscape = pow(saturate(1.0 - volumeThickness), 1.70);
+    float localScatter = saturate(hotGlow * 0.58 + faceGlowMask * 0.26 + lowerGreenHighlight * 0.18);
+    localScatter *= 0.34 + brightStructure * 0.42 + edgeScatter * 0.20;
 
-    float opacity = 0.18
-        + density * 0.34
-        + thickPatch * 0.12
-        + gelLobes * 0.075
-        + lowerWeight * 0.070
-        + thicknessRim * 0.12
-        + causticMask * 0.018
-        + shaderBubbles * 0.010
-        + commonSpecks * 0.006
-        - clearPatch * 0.24;
+    float3 color = bodyGreen;
+    color += deepGreen * (darkDepth * 0.48 + hugeThickness * 0.24);
+    color += luminousGreen * (causticVeins * 0.18 + causticMask * 0.032 + lowerGreenHighlight * 0.020);
+    color += glowSource * (localScatter * 0.14 + brightStructure * 0.045 + particleField * 0.020);
+    color += glowHot * (hotGlow * 0.050 + brightSpecks * 0.040) * (0.40 + brightStructure * 0.60);
+    color += cyanGreen * (cyanMassMask * 0.10 + upperLeftCyan * 0.26 + upperRightWhite * 0.010);
+    color = mix(color, bodyGreen + cyanGreen * 0.018, clearPatch * 0.78);
+    color += coreGlowColor * localScatter * 0.050 * lightEscape;
+    color *= 1.0 + reactivity * 0.08;
+
+    float opacity = 0.006
+        + hugeThickness * 0.072
+        + darkMassMask * 0.012
+        + lowerWeight * 0.010
+        + centerMass * 0.006
+        + gelLobes * 0.006
+        + causticVeins * 0.006
+        + particleField * 0.002
+        - clearPatch * 0.052;
     opacity = saturate(opacity) * visibility;
 
-    float roughness = 0.22 + thickPatch * 0.080 + clearPatch * 0.040 + shaderBubbles * 0.030 - upperRightWhite * 0.040;
-    float3 emissive = bodyGreen * (scatteredGlow * 0.16 + thicknessRim * 0.038 + faceGlowMask * 0.070);
-    emissive += luminousGreen * (scatteredGlow * 0.30 + causticMask * 0.28 + brightMassMask * 0.060 + commonSpecks * 0.16 + brightSpecks * 0.72);
-    emissive += cyanGreen * (cyanMassMask * 0.044 + upperLeftCyan * 0.038);
-    emissive += cleanReflection * upperRightWhite * 0.030;
-    emissive *= visibility * (0.84 + reactivity * 0.22);
+    float roughness = 0.095 + hugeThickness * 0.026 + clearPatch * 0.014 - upperRightWhite * 0.026;
+    float3 emissive = glowSource * (
+        localScatter * 1.08
+        + causticVeins * 1.42
+        + causticMask * 0.22
+        + edgeScatter * 0.26
+        + commonSpecks * 0.22
+        + brightSpecks * 1.36
+    );
+    emissive += glowHot * (hotGlow * 0.84 + brightSpecks * 0.82 + faceGlowMask * 0.16);
+    emissive += luminousGreen * (brightMassMask * 0.080 + lowerGreenHighlight * 0.10);
+    emissive += cyanGreen * (upperLeftCyan * 0.048 + cyanMassMask * 0.024);
+    emissive *= visibility * (0.98 + reactivity * 0.28);
 
-    surface.set_base_color(half3(color * 0.74));
+    surface.set_base_color(half3(color));
     surface.set_normal(tangentNormal);
     surface.set_roughness(half(saturate(roughness)));
     surface.set_metallic(half(0.0));
