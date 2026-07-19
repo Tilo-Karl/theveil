@@ -51,6 +51,34 @@ float2 ectoCenteredUV(float2 uv) {
     return float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
 }
 
+float3 ectoBakedBodyColor(texture2d<half, access::sample> bodyTexture, float2 uv) {
+    constexpr sampler bakedSampler(filter::linear, address::repeat);
+    return float3(bodyTexture.sample(bakedSampler, uv).rgb);
+}
+
+float3 ectoBakedGelTint(float3 bakedColor) {
+    float maxChannel = max(max(bakedColor.r, bakedColor.g), bakedColor.b);
+    float minChannel = min(min(bakedColor.r, bakedColor.g), bakedColor.b);
+    float saturation = maxChannel - minChannel;
+    float whiteFragment = smoothstep(0.74, 0.98, maxChannel)
+        * (1.0 - smoothstep(0.04, 0.20, saturation));
+    float3 chroma = bakedColor / max(maxChannel, 0.001);
+    float3 gelBiasedChroma = mix(ectoArtworkGelGreen(), chroma, 0.70);
+    float3 colorTint = gelBiasedChroma * mix(0.42, 1.18, smoothstep(0.05, 0.95, maxChannel));
+    float3 highlightTint = float3(0.78, 1.06, 0.42);
+    return max(mix(colorTint, highlightTint, whiteFragment), float3(0.018, 0.026, 0.010));
+}
+
+float ectoBakedDensity(float3 bakedColor) {
+    float maxChannel = max(max(bakedColor.r, bakedColor.g), bakedColor.b);
+    float minChannel = min(min(bakedColor.r, bakedColor.g), bakedColor.b);
+    float saturation = maxChannel - minChannel;
+    float whiteFragment = smoothstep(0.74, 0.98, maxChannel)
+        * (1.0 - smoothstep(0.04, 0.20, saturation));
+    float density = saturate(maxChannel * 1.16 + saturation * 0.34);
+    return mix(density, 0.35, whiteFragment);
+}
+
 float ectoSoftNoise(float3 p) {
     float value = spectralNoise(p) * 0.68;
     value += spectralNoise(p * 1.86 + float3(9.2, 4.7, 2.1)) * 0.24;
@@ -237,9 +265,14 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
     float reactivity = controls.z;
     float variant = controls.w;
 
-    float2 p = ectoCenteredUV(geometry.uv0());
+    float2 uv = geometry.uv0();
+    float2 p = ectoCenteredUV(uv);
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
+    auto bakedTexture = params.textures().custom();
+    float3 bakedColor = ectoBakedBodyColor(bakedTexture, uv);
+    float3 bakedTint = ectoBakedGelTint(bakedColor);
+    float bakedDensity = ectoBakedDensity(bakedColor);
 
     float3 variantGreen = ectoVariantBody(variant);
     float3 shellTint = mix(variantGreen, ectoArtworkGelGreen(), 0.68);
@@ -300,6 +333,8 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
         0.12
     );
     baseColor += cleanReflection * directionalWhite * 0.12;
+    baseColor *= bakedTint;
+    baseColor += bakedTint * (flowingHighlight * 0.006 + bubbles * 0.010);
 
     float opacity = 0.004
         + volumeAbsorption * 0.010
@@ -307,23 +342,25 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
         + broadFlow * 0.0015
         + flowingHighlight * 0.0015
         + reactivity * 0.0015;
+    opacity *= mix(0.52, 1.18, bakedDensity);
     opacity *= visibility;
 
     float3 emissive = shellTint * (thicknessRim * 0.004 + lowerDensity * 0.002 + bubbles * 0.003);
     emissive += cyanReflection * upperLeftCyan * 0.012;
     emissive += glowSource * lowerGreen * 0.060;
     emissive += glowSource * edgeScatter * 0.18;
+    emissive *= mix(bakedTint, bakedTint * 1.35, 0.74);
     emissive *= visibility * (0.94 + reactivity * 0.16);
 
-    surface.set_base_color(half3(0.0));
+    surface.set_base_color(half3(baseColor));
     surface.set_normal(tangentNormal);
     surface.set_roughness(half(1.0));
     surface.set_metallic(half(0.0));
     surface.set_clearcoat(half(0.0));
     surface.set_clearcoat_roughness(half(1.0));
     surface.set_clearcoat_normal(half3(tangentNormal));
-    surface.set_opacity(half(0.0));
-    surface.set_emissive_color(half3(0.0));
+    surface.set_opacity(half(opacity));
+    surface.set_emissive_color(half3(emissive));
 }
 
 void ectoReflectiveLayerSurface(realitykit::surface_parameters params, float role) {
@@ -427,9 +464,14 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float reactivity = controls.z;
     float variant = controls.w;
 
-    float2 p = ectoCenteredUV(geometry.uv0());
+    float2 uv = geometry.uv0();
+    float2 p = ectoCenteredUV(uv);
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
+    auto bakedTexture = params.textures().custom();
+    float3 bakedColor = ectoBakedBodyColor(bakedTexture, uv);
+    float3 bakedTint = ectoBakedGelTint(bakedColor);
+    float bakedDensity = ectoBakedDensity(bakedColor);
 
     float3 deepGreen = float3(0.0015, 0.012, 0.004);
     float3 bodyGreen = float3(0.010, 0.048, 0.006);
@@ -543,6 +585,8 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     color += cyanGreen * (cyanMassMask * 0.10 + upperLeftCyan * 0.26 + upperRightWhite * 0.010);
     color = mix(color, bodyGreen + cyanGreen * 0.018, clearPatch * 0.78);
     color += coreGlowColor * localScatter * 0.050 * lightEscape;
+    color *= bakedTint;
+    color += bakedTint * (brightStructure * 0.030 + causticVeins * 0.024 + particleField * 0.012);
     color *= 1.0 + reactivity * 0.08;
 
     float opacity = 0.006
@@ -554,6 +598,7 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
         + causticVeins * 0.006
         + particleField * 0.002
         - clearPatch * 0.052;
+    opacity *= mix(0.58, 1.16, bakedDensity);
     opacity = saturate(opacity) * visibility;
 
     float roughness = 0.095 + hugeThickness * 0.026 + clearPatch * 0.014 - upperRightWhite * 0.026;
@@ -568,6 +613,8 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     emissive += glowHot * (hotGlow * 0.84 + brightSpecks * 0.82 + faceGlowMask * 0.16);
     emissive += luminousGreen * (brightMassMask * 0.080 + lowerGreenHighlight * 0.10);
     emissive += cyanGreen * (upperLeftCyan * 0.048 + cyanMassMask * 0.024);
+    emissive *= mix(bakedTint, bakedTint * 1.36, 0.78);
+    emissive += bakedTint * (causticVeins * 0.16 + brightSpecks * 0.18) * visibility;
     emissive *= visibility * (0.98 + reactivity * 0.28);
 
     surface.set_base_color(half3(color));

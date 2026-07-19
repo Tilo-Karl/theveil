@@ -9,8 +9,17 @@ final class EctoMaterialFactory {
     private let lobeMembraneMaterial: CustomMaterial?
     private let bubbleMaterial: CustomMaterial?
     private let corneaMaterial: CustomMaterial?
+    private let bakedBodyTexture: TextureResource
 
     init() {
+        guard let textureURL = Bundle.main.url(
+            forResource: "Ecto2Lobes_ProjectedColor",
+            withExtension: "png"
+        ) else {
+            preconditionFailure("Missing Ecto2Lobes_ProjectedColor.png in the app bundle")
+        }
+        bakedBodyTexture = try! TextureResource.load(contentsOf: textureURL)
+
         guard let library = MTLCreateSystemDefaultDevice()?.makeDefaultLibrary() else {
             outerShellMaterial = nil
             innerGelMaterial = nil
@@ -20,8 +29,14 @@ final class EctoMaterialFactory {
             return
         }
 
-        outerShellMaterial = Self.makeOuterShellMaterial(library: library)
-        innerGelMaterial = Self.makeInnerGelMaterial(library: library)
+        outerShellMaterial = Self.makeOuterShellMaterial(
+            library: library,
+            bodyTexture: bakedBodyTexture
+        )
+        innerGelMaterial = Self.makeInnerGelMaterial(
+            library: library,
+            bodyTexture: bakedBodyTexture
+        )
         lobeMembraneMaterial = Self.makeLobeMembraneMaterial(library: library)
         bubbleMaterial = Self.makeBubbleMaterial(library: library)
         corneaMaterial = Self.makeCorneaMaterial(library: library)
@@ -161,7 +176,10 @@ final class EctoMaterialFactory {
         )
     }
 
-    private static func makeOuterShellMaterial(library: any MTLLibrary) -> CustomMaterial? {
+    private static func makeOuterShellMaterial(
+        library: any MTLLibrary,
+        bodyTexture: TextureResource
+    ) -> CustomMaterial? {
         let surface = CustomMaterial.SurfaceShader(named: "ectoOuterShellSurface", in: library)
         let geometry = CustomMaterial.GeometryModifier(named: "ectoOuterShellGeometry", in: library)
         guard
@@ -178,10 +196,14 @@ final class EctoMaterialFactory {
         material.faceCulling = .none
         material.readsDepth = true
         material.writesDepth = false
+        material.custom.texture = .init(bodyTexture)
         return material
     }
 
-    private static func makeInnerGelMaterial(library: any MTLLibrary) -> CustomMaterial? {
+    private static func makeInnerGelMaterial(
+        library: any MTLLibrary,
+        bodyTexture: TextureResource
+    ) -> CustomMaterial? {
         let surface = CustomMaterial.SurfaceShader(named: "ectoInnerGelSurface", in: library)
         let geometry = CustomMaterial.GeometryModifier(named: "ectoInnerGelGeometry", in: library)
         guard
@@ -198,6 +220,7 @@ final class EctoMaterialFactory {
         material.faceCulling = .none
         material.readsDepth = true
         material.writesDepth = false
+        material.custom.texture = .init(bodyTexture)
         return material
     }
 
