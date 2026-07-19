@@ -7,6 +7,8 @@ import UIKit
 final class ARSceneEctoRenderer {
     private let materialFactory = EctoMaterialFactory()
     private let blobRadius: Float = 0.155
+    private let ectoBodyMesh = ARSceneEctoRenderer.loadEctoBodyMesh()
+    private let ectoBodyAssetScale: Float = 0.31
     private let outerShellRestScale = SIMD3<Float>(1.12, 1.00, 0.94)
     private let innerGelScaleRatio: Float = 0.965
     private let jumpPreparationDuration: CFTimeInterval = 0.34
@@ -316,22 +318,24 @@ final class ARSceneEctoRenderer {
 
         let shellWobble = sin(Float(time) * 1.18 + ecto.motionPhase) * 0.010
         let shellSideFlow = cos(Float(time) * 0.86 + ecto.motionPhase * 0.6) * 0.006
-        ecto.outerShell.scale = SIMD3<Float>(
+        let shellScale = SIMD3<Float>(
             outerShellRestScale.x + shellWobble,
             outerShellRestScale.y - shellWobble * 0.58,
             outerShellRestScale.z + shellSideFlow
         )
+        ecto.outerShell.scale = shellScale * ectoBodyAssetScale
         ecto.outerShell.position = .zero
 
         let innerPhase = ecto.motionPhase + 1.35
         let innerWobble = sin(Float(time) * 1.02 + innerPhase) * 0.0055
         let innerSideFlow = cos(Float(time) * 0.72 + innerPhase) * 0.0038
         let innerBaseScale = outerShellRestScale * innerGelScaleRatio
-        ecto.innerGel.scale = SIMD3<Float>(
+        let innerScale = SIMD3<Float>(
             innerBaseScale.x + innerWobble,
             innerBaseScale.y - innerWobble * 0.45,
             innerBaseScale.z + innerSideFlow
         )
+        ecto.innerGel.scale = innerScale * ectoBodyAssetScale
         ecto.innerGel.position = SIMD3<Float>(
             sin(Float(time) * 0.64 + innerPhase) * 0.0022,
             cos(Float(time) * 0.58 + innerPhase) * 0.0018,
@@ -639,13 +643,13 @@ final class ARSceneEctoRenderer {
             outerShellMaterials = []
         }
 
-        let bodyMesh = makeJellyBlobMesh(radius: ecto.radius)
+        let bodyMesh = ectoBodyMesh
         let outerShell = ModelEntity(
             mesh: bodyMesh,
             materials: outerShellMaterials
         )
         outerShell.name = "ecto-outer-shell:\(ecto.id.uuidString)"
-        outerShell.scale = outerShellRestScale
+        outerShell.scale = outerShellRestScale * ectoBodyAssetScale
         disableRealityKitShadows(outerShell)
 
         let innerGelMaterials: [any Material]
@@ -664,7 +668,7 @@ final class ARSceneEctoRenderer {
             materials: innerGelMaterials
         )
         innerGel.name = "ecto-inner-gel:\(ecto.id.uuidString)"
-        innerGel.scale = outerShellRestScale * innerGelScaleRatio
+        innerGel.scale = (outerShellRestScale * innerGelScaleRatio) * ectoBodyAssetScale
         innerGel.position = .zero
         disableRealityKitShadows(innerGel)
         root.addChild(innerGel)
@@ -1019,82 +1023,6 @@ final class ARSceneEctoRenderer {
         return bubble
     }
 
-    private func makeJellyBlobMesh(radius: Float, inflate: Float = 1.0) -> MeshResource {
-        let rings = 22
-        let segments = 40
-        var positions: [SIMD3<Float>] = []
-        var normals: [SIMD3<Float>] = []
-        var textureCoordinates: [SIMD2<Float>] = []
-        var indices: [UInt32] = []
-
-        for ringIndex in 0...rings {
-            let v = Float(ringIndex) / Float(rings)
-            let phi = v * .pi
-            let yUnit = cos(phi)
-            let ringUnit = sin(phi)
-            let lower = max(0, -yUnit)
-            let upper = max(0, yUnit)
-            let baseFlatten = smoothStep((lower - 0.78) / 0.22)
-
-            for segmentIndex in 0...segments {
-                let u = Float(segmentIndex) / Float(segments)
-                let theta = u * .pi * 2
-                let wobble = 1
-                    + sin(theta * 3.0 + 0.35) * 0.040
-                    + sin(theta * 5.0 - 1.10) * 0.026
-                    + sin(theta + 0.7) * 0.018
-                let belly = 1 + lower * 0.30 + upper * 0.04
-                let crownTaper = 1 - upper * upper * 0.16
-                let xRadius = radius * ringUnit * belly * crownTaper * wobble * inflate
-                let zRadius = radius * ringUnit * (0.88 + lower * 0.14 - upper * 0.04)
-                    * (1 + cos(theta * 4.0 + 0.6) * 0.026)
-                    * inflate
-
-                let x = cos(theta) * xRadius
-                let z = sin(theta) * zRadius
-                var y = yUnit * radius * (1.02 - lower * 0.08) - lower * lower * radius * 0.10
-                let flattenedY = -radius * 0.74
-                y = mix(
-                    SIMD3<Float>(0, y, 0),
-                    SIMD3<Float>(0, flattenedY, 0),
-                    baseFlatten * 0.52
-                ).y
-
-                let position = SIMD3<Float>(x, y, z)
-                positions.append(position)
-                normals.append(simd_normalize(SIMD3<Float>(
-                    x / max(radius * 1.12, 0.001),
-                    (y + radius * 0.06) / max(radius * 0.94, 0.001),
-                    z / max(radius * 0.92, 0.001)
-                )))
-                textureCoordinates.append(SIMD2<Float>(u, v))
-            }
-        }
-
-        let rowLength = segments + 1
-        for ringIndex in 0..<rings {
-            for segmentIndex in 0..<segments {
-                let a = UInt32(ringIndex * rowLength + segmentIndex)
-                let b = UInt32((ringIndex + 1) * rowLength + segmentIndex)
-                let c = UInt32(ringIndex * rowLength + segmentIndex + 1)
-                let d = UInt32((ringIndex + 1) * rowLength + segmentIndex + 1)
-                indices.append(contentsOf: [a, b, c, c, b, d])
-            }
-        }
-
-        var descriptor = MeshDescriptor(name: "ecto-jelly-blob")
-        descriptor.positions = MeshBuffers.Positions(positions)
-        descriptor.normals = MeshBuffers.Normals(normals)
-        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(textureCoordinates)
-        descriptor.primitives = .triangles(indices)
-
-        do {
-            return try MeshResource.generate(from: [descriptor])
-        } catch {
-            return .generateSphere(radius: radius * inflate)
-        }
-    }
-
     private func makeJellyLobe(
         id: Ecto.ID,
         variant: EctoVariant,
@@ -1190,6 +1118,39 @@ final class ARSceneEctoRenderer {
     private func smoothStep(_ value: Float) -> Float {
         let t = min(max(value, 0), 1)
         return t * t * (3 - 2 * t)
+    }
+
+    private static func loadEctoBodyMesh() -> MeshResource {
+        guard let url = Bundle.main.url(
+            forResource: "Ecto2Lobes",
+            withExtension: "usdz"
+        ) else {
+            preconditionFailure("Missing Ecto2Lobes.usdz in the app bundle")
+        }
+
+        let entity = try! Entity.load(contentsOf: url)
+        guard let modelEntity = entity.firstModelEntity(),
+              let mesh = modelEntity.model?.mesh
+        else {
+            preconditionFailure("Ecto2Lobes.usdz must contain a RealityKit model mesh")
+        }
+        return mesh
+    }
+}
+
+private extension Entity {
+    func firstModelEntity() -> ModelEntity? {
+        if let modelEntity = self as? ModelEntity {
+            return modelEntity
+        }
+
+        for child in children {
+            if let modelEntity = child.firstModelEntity() {
+                return modelEntity
+            }
+        }
+
+        return nil
     }
 }
 
