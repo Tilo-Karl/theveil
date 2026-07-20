@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class EssenceInventoryStore: ObservableObject {
     @Published private(set) var capacitorEssenceCount: Int
+    @Published private(set) var capacitorEctoSampleCount: Int
     @Published private(set) var isIntegratedCellUnlocked: Bool
     @Published private(set) var containmentCellEssenceCount: Int
 
@@ -11,6 +12,7 @@ final class EssenceInventoryStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let capacitorChargeKey = "inventory.veilCapacitor.charge"
+    private let capacitorEctoSamplesKey = "inventory.veilCapacitor.ectoSamples"
     private let integratedCellUnlockedKey = "inventory.integratedContainmentCell.unlocked"
     private let integratedCellChargeKey = "inventory.integratedContainmentCell.charge"
     private let integratedCellMigrationKey = "inventory.integratedContainmentCell.migrated"
@@ -22,9 +24,14 @@ final class EssenceInventoryStore: ObservableObject {
     ) {
         self.defaults = defaults
         self.equipment = equipment
-        self.capacitorEssenceCount = min(
+        let storedCapacitorEssenceCount = min(
             max(0, defaults.integer(forKey: capacitorChargeKey)),
             equipment.capacitorCapacity
+        )
+        self.capacitorEssenceCount = storedCapacitorEssenceCount
+        self.capacitorEctoSampleCount = min(
+            max(0, defaults.integer(forKey: capacitorEctoSamplesKey)),
+            storedCapacitorEssenceCount
         )
 
         if
@@ -49,10 +56,12 @@ final class EssenceInventoryStore: ObservableObject {
         defaults.set(true, forKey: integratedCellMigrationKey)
 
         capacitorEssenceCount = equipment.capacitorCapacity
+        capacitorEctoSampleCount = min(capacitorEctoSampleCount, capacitorEssenceCount)
         isIntegratedCellUnlocked = true
         containmentCellEssenceCount = equipment.containmentCellCapacity
         defaults.set(true, forKey: integratedCellUnlockedKey)
         persistCapacitorCharge()
+        persistCapacitorEctoSamples()
         persistContainmentCellCharge()
     }
 
@@ -71,11 +80,33 @@ final class EssenceInventoryStore: ObservableObject {
         return true
     }
 
-    func uploadCapacitorEssence() -> Int {
-        let uploadedEssence = capacitorEssenceCount
-        capacitorEssenceCount = 0
+    func collectEctoSample(value: Int) -> Bool {
+        guard value > 0, capacitorEssenceCount + value <= equipment.capacitorCapacity else {
+            return false
+        }
+
+        capacitorEssenceCount += value
+        capacitorEctoSampleCount += value
         persistCapacitorCharge()
-        return uploadedEssence
+        persistCapacitorEctoSamples()
+        return true
+    }
+
+    func uploadCapacitorContents() -> UploadedEssenceBatch {
+        let uploadedEssence = capacitorEssenceCount
+        let uploadedEctoSamples = min(capacitorEctoSampleCount, uploadedEssence)
+        capacitorEssenceCount = 0
+        capacitorEctoSampleCount = 0
+        persistCapacitorCharge()
+        persistCapacitorEctoSamples()
+        return UploadedEssenceBatch(
+            totalSamples: uploadedEssence,
+            ectoSamples: uploadedEctoSamples
+        )
+    }
+
+    func uploadCapacitorEssence() -> Int {
+        uploadCapacitorContents().totalSamples
     }
 
     func consumeDischargePacket() -> Bool {
@@ -83,7 +114,11 @@ final class EssenceInventoryStore: ObservableObject {
             return false
         }
         capacitorEssenceCount -= 1
+        if capacitorEctoSampleCount > 0 {
+            capacitorEctoSampleCount -= 1
+        }
         persistCapacitorCharge()
+        persistCapacitorEctoSamples()
         return true
     }
 
@@ -94,7 +129,9 @@ final class EssenceInventoryStore: ObservableObject {
         }
 
         capacitorEssenceCount -= consumedEssence
+        capacitorEctoSampleCount = max(capacitorEctoSampleCount - consumedEssence, 0)
         persistCapacitorCharge()
+        persistCapacitorEctoSamples()
         return consumedEssence
     }
 
@@ -144,8 +181,10 @@ final class EssenceInventoryStore: ObservableObject {
 
         let transferredEssence = min(capacitorEssenceCount, availableCellCapacity)
         capacitorEssenceCount -= transferredEssence
+        capacitorEctoSampleCount = max(capacitorEctoSampleCount - transferredEssence, 0)
         containmentCellEssenceCount += transferredEssence
         persistCapacitorCharge()
+        persistCapacitorEctoSamples()
         defaults.set(containmentCellEssenceCount, forKey: integratedCellChargeKey)
         return .transferred(essence: transferredEssence)
     }
@@ -156,5 +195,9 @@ final class EssenceInventoryStore: ObservableObject {
 
     private func persistCapacitorCharge() {
         defaults.set(capacitorEssenceCount, forKey: capacitorChargeKey)
+    }
+
+    private func persistCapacitorEctoSamples() {
+        defaults.set(capacitorEctoSampleCount, forKey: capacitorEctoSamplesKey)
     }
 }

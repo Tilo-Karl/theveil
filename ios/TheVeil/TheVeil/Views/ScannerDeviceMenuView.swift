@@ -27,7 +27,10 @@ struct ScannerDeviceMenuView: View {
 
                 Section("RESEARCH") {
                     NavigationLink {
-                        BookOfVeilogyView(hasIdentifiedWisp: researchStore.hasIdentifiedWisp)
+                        BookOfVeilogyView(
+                            hasIdentifiedWisp: researchStore.hasIdentifiedWisp,
+                            hasDocumentedEcto: researchStore.hasDocumentedEcto
+                        )
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
@@ -35,7 +38,11 @@ struct ScannerDeviceMenuView: View {
                                     .font(.callout.monospaced().weight(.semibold))
                                 Text(researchStatus)
                                     .font(.caption2.monospaced())
-                                    .foregroundStyle(researchStore.hasIdentifiedWisp ? .cyan : .secondary)
+                                    .foregroundStyle(
+                                        researchStore.hasIdentifiedWisp || researchStore.hasDocumentedEcto
+                                            ? .cyan
+                                            : .secondary
+                                    )
                             }
                         } icon: {
                             Image(systemName: "book.closed")
@@ -68,6 +75,12 @@ struct ScannerDeviceMenuView: View {
     }
 
     private var researchStatus: String {
+        if researchStore.hasIdentifiedWisp && researchStore.hasDocumentedEcto {
+            return "FIELD ENTRIES UPDATED"
+        }
+        if researchStore.hasDocumentedEcto {
+            return "ECTO ENTRY UPDATED"
+        }
         if researchStore.hasIdentifiedWisp {
             return "WILL-O'-THE-WISP ENTRY UPDATED"
         }
@@ -94,6 +107,7 @@ struct ScannerDeviceMenuView: View {
 
 private struct BookOfVeilogyView: View {
     let hasIdentifiedWisp: Bool
+    let hasDocumentedEcto: Bool
 
     var body: some View {
         List {
@@ -115,12 +129,14 @@ private struct BookOfVeilogyView: View {
                 }
 
                 NavigationLink {
-                    VeilogyEntryView(entry: VeilogyEntry.ecto)
+                    VeilogyEntryView(entry: ectoEntry)
                 } label: {
                     VeilogyEntryRow(
                         title: "ECTO",
-                        classification: "LESSER ESSENCE BEING",
-                        isUpdated: true
+                        classification: hasDocumentedEcto
+                            ? "LESSER ESSENCE BEING"
+                            : "ECTOPLASMIC ORGANISM - SAMPLE REQUIRED",
+                        isUpdated: hasDocumentedEcto
                     )
                 }
             }
@@ -173,6 +189,30 @@ private struct BookOfVeilogyView: View {
             classification: "ANALYSIS INCOMPLETE",
             body: "A mobile concentration of spectral energy has been observed. Additional synchronized samples are required before the phenomenon can be classified."
         )
+    }
+
+    private var ectoEntry: VeilogyEntry {
+        guard hasDocumentedEcto else {
+            return VeilogyEntry(
+                title: "ECTO",
+                classification: "ECTOPLASMIC ORGANISM - SAMPLE REQUIRED",
+                threatLevel: "LOW",
+                body: "A compact ectoplasmic organism has been observed in scanner tests. Its behaviour, structure and safe containment properties require an uploaded residual sample before the Book can publish a confirmed field entry.",
+                sections: [
+                    VeilogySection(
+                        title: "RESEARCH REQUIREMENT",
+                        body: "Acquire Resonance Lock, destabilize the entity with the Veil Scanner and upload the stabilized Ecto sample from the Veil Capacitor."
+                    )
+                ],
+                researchStatus: [
+                    VeilogyResearchItem(title: "Visual morphology observed", isDocumented: true),
+                    VeilogyResearchItem(title: "Residual sample uploaded", isDocumented: false),
+                    VeilogyResearchItem(title: "Ectoplasmic integrity measured", isDocumented: false)
+                ]
+            )
+        }
+
+        return VeilogyEntry.ecto
     }
 }
 

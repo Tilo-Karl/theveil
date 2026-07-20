@@ -35,6 +35,8 @@ enum ScannerNotice: Equatable {
     case capacitorOverloaded(peakCharge: Int, capacitorCapacity: Int)
     case essenceUploaded(samples: Int)
     case researchProgress(current: Int, required: Int)
+    case ectoIntegrityDamaged(current: Double, required: Double)
+    case ectoSampleStored(capacitorCharge: Int, capacitorCapacity: Int)
     case essenceContained(transferred: Int, cellCharge: Int, cellCapacity: Int)
     case unidentifiedEssence
     case containmentCellLocked
@@ -44,5 +46,6 @@ enum ScannerNotice: Equatable {
     case awakenedHunt
     case manifestationDetected
     case entityCatalogued
+    case ectoCatalogued
     case libraryUpdated
 }

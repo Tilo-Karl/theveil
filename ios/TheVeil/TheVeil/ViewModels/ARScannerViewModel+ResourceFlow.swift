@@ -7,19 +7,24 @@ extension ARScannerViewModel {
             return
         }
 
-        let uploadedSamples = inventoryStore.uploadCapacitorEssence()
-        guard uploadedSamples > 0 else {
+        let uploadedBatch = inventoryStore.uploadCapacitorContents()
+        guard uploadedBatch.totalSamples > 0 else {
             presentBriefNotice(.capacitorEmpty)
             return
         }
 
-        let researchResult = researchStore.recordUploadedSamples(uploadedSamples)
+        let researchResult = researchStore.recordUploadedSamples(uploadedBatch.ambientSamples)
+        let ectoResearchResult = researchStore.recordUploadedEctoSamples(uploadedBatch.ectoSamples)
         if researchResult == .identified {
             inventoryStore.unlockIntegratedCell()
         }
 
         beginFreshCalmSearch()
-        presentUploadFeedback(samples: uploadedSamples, result: researchResult)
+        presentUploadFeedback(
+            samples: uploadedBatch.totalSamples,
+            result: researchResult,
+            ectoResult: ectoResearchResult
+        )
     }
 
     func containCapacitorEssence() {

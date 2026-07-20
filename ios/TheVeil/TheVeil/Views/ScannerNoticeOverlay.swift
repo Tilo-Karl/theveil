@@ -29,14 +29,14 @@ struct ScannerNoticeOverlay: View {
     private var noticeAccent: Color {
         switch notice {
         case .manifestationFieldCharged, .awakenedHunt, .manifestationDetected,
-             .capacitorOverloaded:
+             .capacitorOverloaded, .ectoIntegrityDamaged:
             return Color(red: 0.72, green: 0.34, blue: 1)
         case .capacitorEmpty, .containmentCellEmpty, .unidentifiedEssence,
              .containmentCellLocked, .containmentCellFull:
             return Color(red: 1, green: 0.55, blue: 0.24)
         case .essenceStored, .capacitorCharged, .capacitorRefilled, .essenceUploaded,
              .researchProgress, .essenceContained, .containmentCellUnlocked,
-             .entityCatalogued, .libraryUpdated:
+             .ectoSampleStored, .entityCatalogued, .ectoCatalogued, .libraryUpdated:
             return .cyan
         }
     }

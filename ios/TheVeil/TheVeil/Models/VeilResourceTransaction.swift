@@ -24,9 +24,24 @@ enum ContainmentTransferResult: Equatable {
     case transferred(essence: Int)
 }
 
+struct UploadedEssenceBatch: Equatable, Sendable {
+    let totalSamples: Int
+    let ectoSamples: Int
+
+    var ambientSamples: Int {
+        max(totalSamples - ectoSamples, 0)
+    }
+}
+
 enum WispResearchUploadResult: Equatable {
     case noSamples
     case progress(current: Int, required: Int)
     case identified
+    case contributed(samples: Int)
+}
+
+enum EctoResearchUploadResult: Equatable {
+    case noSamples
+    case documented
     case contributed(samples: Int)
 }

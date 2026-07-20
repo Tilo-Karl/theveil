@@ -55,6 +55,7 @@ extension ARScannerView {
         private let essenceCollectionDistance: Float = 1
         private let manifestationTrackingDistance: Float = 3
         private let lockOnScreenRadius: CGFloat = 56
+        private let ectoAimWorldRadius: Float = 0.24
 
         init(viewModel: ARScannerViewModel) {
             self.viewModel = viewModel
@@ -297,7 +298,7 @@ extension ARScannerView {
                 case .essence(let id, _):
                     collectEssence(id: id, in: arView)
                 case .ecto(let id, _):
-                    collectEcto(id: id, in: arView)
+                    zapEcto(id: id, in: arView)
                 case .specter:
                     viewModel.applyWeakResonancePulse()
                 case .lostSoul:
@@ -407,7 +408,7 @@ extension ARScannerView {
             #endif
 
             if viewModel.canExtractEssence && !viewModel.visibleEssences.isEmpty {
-                return viewModel.visibleEssences
+                let essenceTarget = viewModel.visibleEssences
                     .compactMap { essence -> (target: ScannerTarget, screenDistance: CGFloat)? in
                         guard
                             essenceRenderer.isCapturable(id: essence.id),
@@ -435,16 +436,27 @@ extension ARScannerView {
                     }
                     .min { $0.screenDistance < $1.screenDistance }?
                     .target
+
+                if let essenceTarget {
+                    return essenceTarget
+                }
             }
 
             if
                 let ecto = viewModel.ectoStore.activeEcto,
                 ectoRenderer.isCapturable(id: ecto.id),
-                let worldPosition = ectoRenderer.worldPosition(for: ecto.id),
-                simd_distance(cameraPosition, worldPosition) <= manifestationTrackingDistance,
-                aimedScreenDistance(to: worldPosition, center: center, in: arView) != nil
+                let worldPosition = ectoRenderer.aimPosition(for: ecto.id),
+                simd_distance(cameraPosition, worldPosition) <= manifestationTrackingDistance
             {
-                return .ecto(id: ecto.id, worldPosition: worldPosition)
+                if reticleHitsEcto(id: ecto.id, center: center, in: arView)
+                    || aimedBodyScreenDistance(
+                        to: worldPosition,
+                        worldRadius: ectoAimWorldRadius,
+                        center: center,
+                        in: arView
+                    ) != nil {
+                    return .ecto(id: ecto.id, worldPosition: worldPosition)
+                }
             }
 
             if
@@ -511,7 +523,7 @@ extension ARScannerView {
 
             if
                 let ecto = viewModel.ectoStore.activeEcto,
-                let worldPosition = ectoRenderer.worldPosition(for: ecto.id)
+                let worldPosition = ectoRenderer.aimPosition(for: ecto.id)
             {
                 let distance = Double(simd_distance(cameraPosition, worldPosition))
                 let proximity = 1 - min(max((distance - 0.45) / 2.8, 0), 1)
@@ -528,7 +540,14 @@ extension ARScannerView {
                     let aimInfluence = 1 - min(Double(screenDistance / 260), 1)
                     signal += aimInfluence * 0.24
 
-                    if distance <= 2.8 && screenDistance <= 190 {
+                    if distance <= 2.8,
+                       reticleHitsEcto(id: ecto.id, center: center, in: arView)
+                        || aimedBodyScreenDistance(
+                            to: worldPosition,
+                            worldRadius: ectoAimWorldRadius,
+                            center: center,
+                            in: arView
+                        ) != nil {
                         anomalyDetected = true
                     }
                 }
@@ -560,6 +579,77 @@ extension ARScannerView {
 
             let screenDistance = hypot(screenPosition.x - center.x, screenPosition.y - center.y)
             return screenDistance <= lockOnScreenRadius ? screenDistance : nil
+        }
+
+        private func reticleHitsEcto(
+            id: Ecto.ID,
+            center: CGPoint,
+            in arView: ARView
+        ) -> Bool {
+            guard let entity = arView.entity(at: center) else {
+                return false
+            }
+            return ectoRenderer.ectoID(for: entity) == id
+        }
+
+        private func aimedBodyScreenDistance(
+            to worldPosition: SIMD3<Float>,
+            worldRadius: Float,
+            center: CGPoint,
+            in arView: ARView
+        ) -> CGFloat? {
+            guard
+                let screenPosition = arView.project(worldPosition),
+                arView.bounds.insetBy(dx: -80, dy: -80).contains(screenPosition)
+            else {
+                return nil
+            }
+
+            let screenDistance = hypot(screenPosition.x - center.x, screenPosition.y - center.y)
+            let projectedRadius = projectedScreenRadius(
+                around: worldPosition,
+                worldRadius: worldRadius,
+                in: arView
+            )
+            let aimRadius = max(lockOnScreenRadius, projectedRadius * 0.9)
+            return screenDistance <= aimRadius ? screenDistance : nil
+        }
+
+        private func projectedScreenRadius(
+            around worldPosition: SIMD3<Float>,
+            worldRadius: Float,
+            in arView: ARView
+        ) -> CGFloat {
+            guard let center = arView.project(worldPosition) else {
+                return lockOnScreenRadius
+            }
+
+            let cameraMatrix = arView.cameraTransform.matrix
+            let cameraRight = SIMD3<Float>(
+                cameraMatrix.columns.0.x,
+                cameraMatrix.columns.0.y,
+                cameraMatrix.columns.0.z
+            )
+            let cameraUp = SIMD3<Float>(
+                cameraMatrix.columns.1.x,
+                cameraMatrix.columns.1.y,
+                cameraMatrix.columns.1.z
+            )
+            let samplePoints = [
+                worldPosition + cameraRight * worldRadius,
+                worldPosition - cameraRight * worldRadius,
+                worldPosition + cameraUp * worldRadius,
+                worldPosition - cameraUp * worldRadius
+            ]
+
+            let projectedDistances = samplePoints.compactMap { sample -> CGFloat? in
+                guard let projected = arView.project(sample) else {
+                    return nil
+                }
+                return hypot(projected.x - center.x, projected.y - center.y)
+            }
+
+            return projectedDistances.max() ?? lockOnScreenRadius
         }
 
         private func synchronizeManifestationRenderers(in arView: ARView) {
@@ -614,15 +704,17 @@ extension ARScannerView {
             essenceRenderer.collectEssence(id: id, from: arView)
         }
 
-        private func collectEcto(id: Ecto.ID, in arView: ARView) {
+        private func zapEcto(id: Ecto.ID, in arView: ARView) {
             guard
                 ectoRenderer.isCapturable(id: id),
-                viewModel.collectEcto(id: id)
+                viewModel.zapEcto(id: id)
             else {
+                haptic.impactOccurred(intensity: 0.35)
+                haptic.prepare()
                 return
             }
 
-            haptic.impactOccurred()
+            haptic.impactOccurred(intensity: 0.8)
             haptic.prepare()
             resonanceLockTracker.reset()
             #if DEBUG

@@ -5,6 +5,9 @@ struct ARScannerScreen: View {
     @StateObject private var audioController = ScannerAudioController()
     @State private var isDeviceMenuPresented = false
     @State private var isCapacitorActionsPresented = false
+    #if DEBUG
+    @State private var isDebugPanelCollapsed = true
+    #endif
 
     var body: some View {
         ZStack {
@@ -163,6 +166,7 @@ struct ARScannerScreen: View {
                     HStack {
                         Spacer()
                         DebugScannerControls(
+                            isCollapsed: $isDebugPanelCollapsed,
                             autoLock: Binding(
                                 get: { viewModel.debugAutoLockEnabled },
                                 set: { viewModel.setDebugAutoLockEnabled($0) }
@@ -375,6 +379,7 @@ private struct FracturedLensPattern: Shape {
 
 #if DEBUG
 private struct DebugScannerControls: View {
+    @Binding var isCollapsed: Bool
     @Binding var autoLock: Bool
     @Binding var phaseCube: Bool
     let traversalStatus: String
@@ -382,37 +387,58 @@ private struct DebugScannerControls: View {
     let spawnEctoAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Toggle(isOn: $autoLock) {
-                Label("AUTO LOCK", systemImage: "scope")
-            }
-            Toggle(isOn: $phaseCube) {
-                Label("PHASE CUBE", systemImage: "cube.transparent")
-            }
-
-            Button(action: spawnEctoAction) {
-                Label("SPAWN ECTO", systemImage: "drop.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: isCollapsed ? 0 : 8) {
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    isCollapsed.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("DEV")
+                    Spacer(minLength: 10)
+                    Text(isCollapsed ? ectoStatus : "MINIMIZE")
+                        .foregroundStyle(isCollapsed ? Color(red: 0.72, green: 0.42, blue: 1) : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Image(systemName: isCollapsed ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.cyan)
 
-            Text(traversalStatus)
+            if !isCollapsed {
+                Toggle(isOn: $autoLock) {
+                    Label("AUTO LOCK", systemImage: "scope")
+                }
+                Toggle(isOn: $phaseCube) {
+                    Label("PHASE CUBE", systemImage: "cube.transparent")
+                }
+
+                Button(action: spawnEctoAction) {
+                    Label("SPAWN ECTO", systemImage: "drop.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(.cyan)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
 
-            Text(ectoStatus)
-                .foregroundStyle(Color(red: 0.72, green: 0.42, blue: 1))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                Text(traversalStatus)
+                    .foregroundStyle(.cyan)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Text(ectoStatus)
+                    .foregroundStyle(Color(red: 0.72, green: 0.42, blue: 1))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
         }
         .font(.caption2.monospaced().weight(.semibold))
         .toggleStyle(.switch)
         .tint(Color(red: 0.7, green: 0.32, blue: 1))
         .foregroundStyle(.white)
         .padding(10)
-        .frame(width: 205)
+        .frame(width: isCollapsed ? 168 : 205)
         .background(Color.black.opacity(0.72))
         .overlay {
             RoundedRectangle(cornerRadius: 5)

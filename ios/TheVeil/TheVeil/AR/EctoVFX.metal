@@ -56,108 +56,22 @@ struct EctoSourcePaintSample {
     float coverage;
 };
 
-float ectoBodyX(float3 position) {
-    return saturate((position.x + 0.50025) / 1.00049);
-}
-
-float ectoBodyY(float3 position) {
-    return saturate(1.0 - ((position.y + 0.46409) / 0.91372));
-}
-
-float ectoBodyZ(float3 position) {
-    return saturate((position.z + 0.36228) / 0.72269);
-}
-
-float2 ectoAtlasTileUV(float2 localUV, float2 tile, float4 contentRect) {
-    float2 rectMin = contentRect.xy + float2(0.002);
-    float2 rectMax = contentRect.zw - float2(0.002);
-    float2 tileUV = mix(rectMin, rectMax, saturate(localUV));
-    return (tile + tileUV) / float2(3.0, 2.0);
-}
-
-float4 ectoSamplePaintTile(
-    texture2d<half, access::sample> sourceAtlas,
-    float2 localUV,
-    float2 tile,
-    float4 contentRect
-) {
-    constexpr sampler paintSampler(filter::linear, address::clamp_to_edge);
-    return float4(sourceAtlas.sample(paintSampler, ectoAtlasTileUV(localUV, tile, contentRect)));
-}
-
-EctoSourcePaintSample ectoSourcePaint(
-    texture2d<half, access::sample> sourceAtlas,
-    float3 position,
-    float3 normal,
+EctoSourcePaintSample ectoBodyOnlyPaint(
+    texture2d<half, access::sample> bodyTexture,
     float2 uv
 ) {
-    float x = ectoBodyX(position);
-    float y = ectoBodyY(position);
-    float z = ectoBodyZ(position);
-
-    float4 front = ectoSamplePaintTile(
-        sourceAtlas,
-        float2(x, y),
-        float2(0.0, 0.0),
-        float4(0.0877, 0.0861, 0.9115, 0.8931)
+    constexpr sampler bodySampler(
+        filter::linear,
+        mip_filter::linear,
+        address::clamp_to_edge
     );
-    float4 right = ectoSamplePaintTile(
-        sourceAtlas,
-        float2(1.0 - z, y),
-        float2(1.0, 0.0),
-        float4(0.0750, 0.0702, 0.9011, 0.9211)
-    );
-    float4 back = ectoSamplePaintTile(
-        sourceAtlas,
-        float2(1.0 - x, y),
-        float2(2.0, 0.0),
-        float4(0.0885, 0.0694, 0.9027, 0.9091)
-    );
-    float4 left = ectoSamplePaintTile(
-        sourceAtlas,
-        float2(z, y),
-        float2(0.0, 1.0),
-        float4(0.0997, 0.0718, 0.9051, 0.9187)
-    );
-    float4 fallback = ectoSamplePaintTile(
-        sourceAtlas,
-        saturate(uv),
-        float2(1.0, 1.0),
-        float4(0.0, 0.0, 0.9992, 0.9992)
-    );
-
-    float3 n = normalize(normal);
-    float frontView = pow(saturate(n.z), 1.45);
-    float backView = pow(saturate(-n.z), 1.45);
-    float rightView = pow(saturate(n.x), 1.35);
-    float leftView = pow(saturate(-n.x), 1.35);
-
-    float frontRegion = smoothstep(-0.24, 0.18, position.z);
-    float backRegion = smoothstep(-0.24, 0.18, -position.z);
-    float rightRegion = smoothstep(0.16, 0.43, position.x);
-    float leftRegion = smoothstep(0.16, 0.43, -position.x);
-
-    float frontWeight = max(frontView, frontRegion * 0.34) * smoothstep(0.18, 0.82, front.a);
-    float rightWeight = max(rightView, rightRegion * 0.62) * smoothstep(0.18, 0.82, right.a);
-    float backWeight = max(backView, backRegion * 0.30) * smoothstep(0.18, 0.82, back.a);
-    float leftWeight = max(leftView, leftRegion * 0.62) * smoothstep(0.18, 0.82, left.a);
-
-    float sourceWeight = frontWeight + rightWeight + backWeight + leftWeight;
-    float3 sourceColor = (
-        front.rgb * frontWeight
-        + right.rgb * rightWeight
-        + back.rgb * backWeight
-        + left.rgb * leftWeight
-    ) / max(sourceWeight, 0.0001);
-
-    float fallbackCoverage = smoothstep(0.015, 0.12, max(max(fallback.r, fallback.g), fallback.b));
-    float fallbackBlend = 1.0 - smoothstep(0.08, 0.34, sourceWeight);
-    float3 color = mix(sourceColor, fallback.rgb, fallbackBlend);
-    float coverage = saturate(sourceWeight + fallbackCoverage * fallbackBlend * 0.55);
+    float4 sample = float4(bodyTexture.sample(bodySampler, saturate(uv)));
 
     EctoSourcePaintSample paint;
-    paint.color = max(color, float3(0.0));
-    paint.coverage = coverage;
+    paint.color = max(sample.rgb, float3(0.0));
+    float maxChannel = max(max(paint.color.r, paint.color.g), paint.color.b);
+    paint.coverage = smoothstep(0.018, 0.16, maxChannel)
+        * smoothstep(0.02, 0.38, sample.a);
     return paint;
 }
 
@@ -332,9 +246,8 @@ void ectoOuterShellSurface(realitykit::surface_parameters params) {
     float2 p = ectoCenteredUV(uv);
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
-    float3 modelPosition = geometry.model_position();
-    auto sourceAtlas = params.textures().custom();
-    EctoSourcePaintSample sourcePaint = ectoSourcePaint(sourceAtlas, modelPosition, normal, uv);
+    auto bodyTexture = params.textures().custom();
+    EctoSourcePaintSample sourcePaint = ectoBodyOnlyPaint(bodyTexture, uv);
     float3 sourceColor = sourcePaint.color;
     float3 paintColor = ectoProjectedPaintColor(sourceColor);
     float sourceCoverage = sourcePaint.coverage;
@@ -442,9 +355,8 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     float2 p = ectoCenteredUV(uv);
     float3 normal = normalize(geometry.normal());
     float3 viewDirection = normalize(geometry.view_direction());
-    float3 modelPosition = geometry.model_position();
-    auto sourceAtlas = params.textures().custom();
-    EctoSourcePaintSample sourcePaint = ectoSourcePaint(sourceAtlas, modelPosition, normal, uv);
+    auto bodyTexture = params.textures().custom();
+    EctoSourcePaintSample sourcePaint = ectoBodyOnlyPaint(bodyTexture, uv);
     float3 sourceColor = sourcePaint.color;
     float3 paintColor = ectoProjectedPaintColor(sourceColor);
     float sourceCoverage = sourcePaint.coverage;
@@ -478,39 +390,39 @@ void ectoInnerGelSurface(realitykit::surface_parameters params) {
     );
     float3 tangentNormal = normalize(float3(gradient * (0.016 + reactivity * 0.012), 1.0));
 
-    float3 paintedGel = paintColor * (0.34 + paintDensity * 0.26 + yellowGlow * 0.16);
-    paintedGel = mix(paintedGel, deepAbsorption + paintColor * 0.16, darkGreen * 0.42);
-    paintedGel += clearGelTint * (1.0 - sourceCoverage) * 0.012;
-    paintedGel += glowSource * yellowGlow * 0.060;
-    paintedGel += glowHot * yellowGlow * centerMass * 0.030;
-    paintedGel += cyanGreen * cyanMask * (0.075 + fresnel * 0.030);
-    paintedGel += paintColor * fineSpecks * 0.070;
+    float3 paintedGel = paintColor * (0.72 + paintDensity * 0.22 + yellowGlow * 0.08);
+    paintedGel = mix(paintedGel, deepAbsorption + paintColor * 0.34, darkGreen * 0.22);
+    paintedGel += clearGelTint * (1.0 - sourceCoverage) * 0.004;
+    paintedGel += glowSource * yellowGlow * 0.018;
+    paintedGel += glowHot * yellowGlow * centerMass * 0.010;
+    paintedGel += cyanGreen * cyanMask * (0.095 + fresnel * 0.018);
+    paintedGel += paintColor * fineSpecks * 0.040;
 
     float edgeLightEscape = pow(saturate(1.0 - centerMass), 1.3) * (0.20 + shapeRim * 0.46);
     float3 color = paintedGel * pulse;
-    color += glowSource * yellowGlow * edgeLightEscape * 0.040;
-    color *= 1.0 + reactivity * 0.06;
+    color += glowSource * yellowGlow * edgeLightEscape * 0.012;
+    color *= 1.0 + reactivity * 0.035;
 
-    float opacity = 0.0035
-        + sourceCoverage * 0.012
-        + paintDensity * 0.088
-        + darkGreen * 0.048
-        + yellowGlow * 0.030
-        + cyanMask * 0.014
-        + lowerWeight * 0.010
-        + centerMass * 0.006
+    float opacity = 0.13
+        + sourceCoverage * 0.10
+        + paintDensity * 0.16
+        + darkGreen * 0.045
+        + yellowGlow * 0.022
+        + cyanMask * 0.018
+        + lowerWeight * 0.018
+        + centerMass * 0.010
         + fineSpecks * 0.004
         + reactivity * 0.004;
-    opacity *= 0.90 + lowerWeight * 0.12 + darkGreen * 0.10;
+    opacity *= 0.95 + lowerWeight * 0.10 + darkGreen * 0.08;
     opacity = saturate(opacity) * visibility;
 
-    float roughness = 0.085 + paintDensity * 0.035 - yellowGlow * 0.020 + reactivity * 0.010;
-    float3 emissive = paintColor * (yellowGlow * 0.36 + paintDensity * 0.035);
-    emissive += glowSource * (yellowGlow * 0.46 + fineSpecks * 0.16);
-    emissive += glowHot * yellowGlow * centerMass * 0.14;
-    emissive += cyanGreen * cyanMask * 0.070;
-    emissive += ectoVariantCore(variant) * yellowGlow * 0.035;
-    emissive *= visibility * pulse * (0.62 + reactivity * 0.26);
+    float roughness = 0.075 + paintDensity * 0.030 - yellowGlow * 0.012 + reactivity * 0.008;
+    float3 emissive = paintColor * (yellowGlow * 0.090 + paintDensity * 0.016);
+    emissive += glowSource * (yellowGlow * 0.105 + fineSpecks * 0.060);
+    emissive += glowHot * yellowGlow * centerMass * 0.030;
+    emissive += cyanGreen * cyanMask * 0.034;
+    emissive += ectoVariantCore(variant) * yellowGlow * 0.012;
+    emissive *= visibility * pulse * (0.46 + reactivity * 0.18);
 
     surface.set_base_color(half3(color));
     surface.set_normal(tangentNormal);

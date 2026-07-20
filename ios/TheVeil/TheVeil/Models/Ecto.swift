@@ -2,6 +2,9 @@ import Foundation
 import simd
 
 struct Ecto: Equatable, Identifiable {
+    static let ectoplasmicIntegrity: Double = 6
+    static let scannerZapDamage: Double = 2
+
     let id: UUID
     let position: SIMD3<Float>
     let variant: EctoVariant
@@ -38,4 +41,10 @@ enum EctoVariant: Int, CaseIterable {
     case amethyst
     case ember
     case golden
+}
+
+enum EctoResonanceResult: Equatable {
+    case noEffect
+    case progressed(current: Double, required: Double)
+    case thresholdReached(Ecto)
 }

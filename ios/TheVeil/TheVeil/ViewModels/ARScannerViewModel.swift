@@ -189,6 +189,9 @@ final class ARScannerViewModel: ObservableObject {
     }
 
     var fieldCounterLabel: String {
+        if ectoStore.activeEcto != nil {
+            return AppStrings.integrityCounterLabel
+        }
         if encounterStore.state.phase == .chargingField {
             return AppStrings.manifestationCounterLabel
         }
@@ -207,6 +210,9 @@ final class ARScannerViewModel: ObservableObject {
     }
 
     var fieldCounterValue: String {
+        if ectoStore.activeEcto != nil {
+            return "\(AppStrings.resonanceValue(ectoStore.ectoplasmicDamage)) / \(AppStrings.resonanceValue(Ecto.ectoplasmicIntegrity))"
+        }
         if encounterStore.state.phase == .chargingField {
             return "\(AppStrings.resonanceValue(encounterStore.fieldCharge)) / \(AppStrings.resonanceValue(encounterStore.requiredFieldCharge))"
         }
@@ -312,36 +318,63 @@ final class ARScannerViewModel: ObservableObject {
         #endif
     }
 
-    func collectEcto(id: Ecto.ID) -> Bool {
+    func zapEcto(id: Ecto.ID) -> Bool {
         guard isScannerOperational else {
             return false
         }
 
-        guard let ecto = ectoStore.remove(id: id) else {
+        let result = ectoStore.applyScannerZap(id: id)
+        switch result {
+        case .noEffect:
             return false
+
+        case .progressed(let current, let required):
+            scannerNotice = .ectoIntegrityDamaged(current: current, required: required)
+            noticeTask?.cancel()
+            noticeTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard await wait(milliseconds: 650) else { return }
+                if case .ectoIntegrityDamaged = scannerNotice {
+                    scannerNotice = nil
+                }
+            }
+            return false
+
+        case .thresholdReached(let ecto):
+            clearLockOn()
+
+            if inventoryStore.collectEctoSample(value: ecto.essenceValue) {
+                if inventoryStore.capacitorEssenceCount == inventoryStore.equipment.capacitorCapacity {
+                    gameplayPhase = .charged
+                    scannerStateStore.setStatus(.charged)
+                }
+
+                essenceStorageEventCounter += 1
+                scannerNotice = .ectoSampleStored(
+                    capacitorCharge: inventoryStore.capacitorEssenceCount,
+                    capacitorCapacity: inventoryStore.equipment.capacitorCapacity
+                )
+                noticeTask?.cancel()
+                noticeTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard await wait(milliseconds: 1_050) else { return }
+
+                    if gameplayPhase == .charged {
+                        scannerNotice = .capacitorCharged
+                        guard await wait(milliseconds: 1_350) else { return }
+                    }
+                    scannerNotice = nil
+                }
+            } else {
+                presentBriefNotice(.capacitorCharged, milliseconds: 900)
+            }
+
+            #if DEBUG
+            debugEctoStatus = "ECTO READY"
+            #endif
+
+            return true
         }
-
-        clearLockOn()
-
-        let essence = AmbientEssence(
-            id: ecto.id,
-            position: ecto.position,
-            value: ecto.essenceValue,
-            radius: ecto.radius
-        )
-
-        if inventoryStore.canCollect(essence) {
-            _ = inventoryStore.collect(essence)
-            presentExtractionFeedback()
-        } else {
-            presentBriefNotice(.capacitorCharged, milliseconds: 900)
-        }
-
-        #if DEBUG
-        debugEctoStatus = "ECTO READY"
-        #endif
-
-        return true
     }
 
     func updateSpectralSignal(
@@ -578,7 +611,8 @@ final class ARScannerViewModel: ObservableObject {
 
     func presentUploadFeedback(
         samples: Int,
-        result: WispResearchUploadResult
+        result: WispResearchUploadResult,
+        ectoResult: EctoResearchUploadResult = .noSamples
     ) {
         noticeTask?.cancel()
         scannerNotice = .essenceUploaded(samples: samples)
@@ -589,7 +623,9 @@ final class ARScannerViewModel: ObservableObject {
 
             switch result {
             case .noSamples:
-                scannerNotice = .capacitorEmpty
+                scannerNotice = ectoResult == .noSamples
+                    ? .capacitorEmpty
+                    : .libraryUpdated
 
             case .progress(let current, let required):
                 scannerNotice = .researchProgress(current: current, required: required)
@@ -602,6 +638,13 @@ final class ARScannerViewModel: ObservableObject {
                 scannerNotice = .libraryUpdated
 
             case .contributed:
+                scannerNotice = .libraryUpdated
+            }
+
+            if ectoResult == .documented {
+                guard await wait(milliseconds: 1_100) else { return }
+                scannerNotice = .ectoCatalogued
+            } else if case .contributed = ectoResult {
                 scannerNotice = .libraryUpdated
             }
 

@@ -162,7 +162,11 @@ struct VeilogyEntry: Identifiable {
             ),
             VeilogySection(
                 title: "FIELD APPEARANCE",
-                body: "Typical specimens appear as translucent ectoplasmic blobs with a bright internal core, floating facial features and a soft rim glow. The body compresses before jumping and ripples after landing."
+                body: "Typical specimens appear as translucent ectoplasmic blobs with a bright internal core, mottled green-yellow body density and dark eye cores set into shallow facial hollows. The body compresses before jumping and ripples after landing."
+            ),
+            VeilogySection(
+                title: "VEILOLOGY MEASUREMENTS",
+                body: "Ectoplasmic Integrity\n6\n\nScanner Zap Degradation\n2 per sustained beam pulse\n\nResonance Resistance\n0"
             ),
             VeilogySection(
                 title: "RECOMMENDED PROCEDURE",
@@ -173,6 +177,8 @@ struct VeilogyEntry: Identifiable {
             VeilogyResearchItem(title: "Visual morphology documented", isDocumented: true),
             VeilogyResearchItem(title: "Surface interaction observed", isDocumented: true),
             VeilogyResearchItem(title: "Non-hostile temperament observed", isDocumented: true),
+            VeilogyResearchItem(title: "Residual sample uploaded", isDocumented: true),
+            VeilogyResearchItem(title: "Ectoplasmic integrity measured", isDocumented: true),
             VeilogyResearchItem(title: "Origin unknown", isDocumented: false),
             VeilogyResearchItem(title: "Lifecycle unknown", isDocumented: false)
         ]

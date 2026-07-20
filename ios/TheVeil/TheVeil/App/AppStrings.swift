@@ -138,6 +138,10 @@ enum AppStrings {
             return "RESEARCH UPLOAD COMPLETE"
         case .researchProgress:
             return "WISP ANALYSIS UPDATED"
+        case .ectoIntegrityDamaged:
+            return "ECTO INTEGRITY WEAKENED"
+        case .ectoSampleStored:
+            return "ECTO SAMPLE STORED"
         case .essenceContained:
             return "ESSENCE CONTAINED"
         case .unidentifiedEssence:
@@ -156,6 +160,8 @@ enum AppStrings {
             return "UNKNOWN ENTITY DETECTED"
         case .entityCatalogued:
             return "WILL-O'-THE-WISP IDENTIFIED"
+        case .ectoCatalogued:
+            return "ECTO CATALOGUED"
         case .libraryUpdated:
             return "VEILOLOGY UPDATED"
         }
@@ -189,6 +195,10 @@ enum AppStrings {
             return "\(samples) SAMPLE\(samples == 1 ? "" : "S") ANALYZED"
         case .researchProgress(let current, let required):
             return "WISP RESEARCH  \(current) / \(required)"
+        case .ectoIntegrityDamaged(let current, let required):
+            return "ECTOPLASMIC INTEGRITY  \(resonanceValue(current)) / \(resonanceValue(required))"
+        case .ectoSampleStored(let capacitorCharge, let capacitorCapacity):
+            return "VEIL CAPACITOR  \(capacitorCharge) / \(capacitorCapacity)"
         case .essenceContained(let transferred, let cellCharge, let cellCapacity):
             return "+\(transferred)  CELL \(cellCharge) / \(cellCapacity)"
         case .unidentifiedEssence:
@@ -207,6 +217,8 @@ enum AppStrings {
             return "BEGIN RESONANCE ANALYSIS"
         case .entityCatalogued:
             return nil
+        case .ectoCatalogued:
+            return "LESSER ESSENCE BEING ENTRY UPDATED"
         case .libraryUpdated:
             return nil
         }

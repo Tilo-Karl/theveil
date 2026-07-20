@@ -11,6 +11,22 @@ final class ARSceneEctoRenderer {
     private let ectoBodyAssetScale: Float = 0.31
     private let outerShellRestScale = SIMD3<Float>(1.12, 1.00, 0.94)
     private let innerGelScaleRatio: Float = 0.965
+    private let bodyTextureProofMode = false
+    private let leftEyeSurfaceAnchor = EctoSurfaceFaceAnchor(
+        meshPosition: SIMD3<Float>(-0.150, 0.030, 0.330),
+        meshNormal: SIMD3<Float>(-0.060, 0.610, 0.790),
+        normalOffset: 0.0024
+    )
+    private let rightEyeSurfaceAnchor = EctoSurfaceFaceAnchor(
+        meshPosition: SIMD3<Float>(0.150, 0.030, 0.330),
+        meshNormal: SIMD3<Float>(0.060, 0.610, 0.790),
+        normalOffset: 0.0024
+    )
+    private let mouthSurfaceAnchor = EctoSurfaceFaceAnchor(
+        meshPosition: SIMD3<Float>(0.000, -0.118, 0.343),
+        meshNormal: SIMD3<Float>(0.000, 0.026, 1.000),
+        normalOffset: 0.0012
+    )
     private let jumpPreparationDuration: CFTimeInterval = 0.34
     private let jumpDuration: CFTimeInterval = 0.82
     private let landingDuration: CFTimeInterval = 0.36
@@ -135,6 +151,13 @@ final class ARSceneEctoRenderer {
             return nil
         }
         return renderedEcto?.anchor.position
+    }
+
+    func aimPosition(for id: Ecto.ID) -> SIMD3<Float>? {
+        guard let renderedEcto, renderedEcto.id == id else {
+            return nil
+        }
+        return renderedEcto.root.position(relativeTo: nil)
     }
 
     func isCapturable(id: Ecto.ID) -> Bool {
@@ -342,6 +365,31 @@ final class ARSceneEctoRenderer {
             0
         )
 
+        if bodyTextureProofMode {
+            ecto.innerGel.scale = shellScale * ectoBodyAssetScale
+            ecto.innerGel.position = .zero
+            ecto.innerGel.model?.materials = [materialFactory.makeBodyTextureProofMaterial()]
+            updateSurfaceAttachedFace(
+                ecto,
+                bodyScale: shellScale * ectoBodyAssetScale,
+                at: time,
+                reactivity: reactivity
+            )
+            configureBodyTextureProofMode(
+                outerShell: ecto.outerShell,
+                innerGel: ecto.innerGel,
+                jellyLobes: ecto.jellyLobes,
+                bubbles: ecto.bubbles,
+                core: ecto.core,
+                coreHalo: ecto.coreHalo,
+                eyes: ecto.eyes,
+                mouth: ecto.mouth,
+                contactShadow: ecto.contactShadow,
+                dropletLayer: ecto.dropletLayer
+            )
+            return
+        }
+
         if let material = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float(time) + ecto.motionPhase,
@@ -460,9 +508,9 @@ final class ARSceneEctoRenderer {
         let corePulse = 1 + sin(Float(time) * 3.9 + ecto.motionPhase) * 0.16 + reactivity * 0.28
         ecto.core.scale = SIMD3<Float>(repeating: 0.72 * corePulse)
         ecto.coreHalo.scale = SIMD3<Float>(
-            1.48 + sin(Float(time) * 2.7 + ecto.motionPhase) * 0.12 + reactivity * 0.22,
-            0.58 + sin(Float(time) * 2.1 + ecto.motionPhase) * 0.06 + reactivity * 0.10,
-            1.18 + reactivity * 0.12
+            0.82 + sin(Float(time) * 2.7 + ecto.motionPhase) * 0.045 + reactivity * 0.08,
+            0.34 + sin(Float(time) * 2.1 + ecto.motionPhase) * 0.024 + reactivity * 0.035,
+            0.66 + reactivity * 0.045
         )
         ecto.core.position = SIMD3<Float>(
             sin(Float(time) * 1.4 + ecto.motionPhase) * 0.006,
@@ -475,23 +523,12 @@ final class ARSceneEctoRenderer {
             0.036
         )
 
-        let mouthOpen: Float = ecto.state == .landing ? 1 : reactivity
-        ecto.mouth.scale = SIMD3<Float>(
-            1.0 + mouthOpen * 0.26,
-            0.26 + mouthOpen * 0.88,
-            0.24
+        updateSurfaceAttachedFace(
+            ecto,
+            bodyScale: shellScale * ectoBodyAssetScale,
+            at: time,
+            reactivity: reactivity
         )
-
-        let blink = max(0.18, 1.0 - pow(max(0, sin(Float(time) * 1.6 + ecto.motionPhase)), 18.0) * 0.82)
-        for (index, eye) in ecto.eyes.enumerated() {
-            let eyeBob = sin(Float(time) * 2.0 + ecto.motionPhase + Float(index) * 1.7) * 0.004
-            eye.position.y = 0.040 + eyeBob
-            eye.scale = SIMD3<Float>(
-                0.88,
-                (1.08 + reactivity * 0.18) * blink,
-                0.36
-            )
-        }
 
         let shadowPulse: Float = ecto.state == .landing ? 0.34 : 0
         ecto.contactShadow.scale = SIMD3<Float>(
@@ -633,7 +670,9 @@ final class ARSceneEctoRenderer {
         root.position = SIMD3<Float>(0, -ecto.radius * 0.30, 0)
 
         let outerShellMaterials: [any Material]
-        if let outerShellMaterial = materialFactory.makeOuterShellMaterial(
+        if bodyTextureProofMode {
+            outerShellMaterials = []
+        } else if let outerShellMaterial = materialFactory.makeOuterShellMaterial(
             variant: ecto.variant,
             phase: Float.random(in: 0...10),
             visibility: 0.88
@@ -653,7 +692,9 @@ final class ARSceneEctoRenderer {
         disableRealityKitShadows(outerShell)
 
         let innerGelMaterials: [any Material]
-        if let innerGelMaterial = materialFactory.makeInnerGelMaterial(
+        if bodyTextureProofMode {
+            innerGelMaterials = [materialFactory.makeBodyTextureProofMaterial()]
+        } else if let innerGelMaterial = materialFactory.makeInnerGelMaterial(
             variant: ecto.variant,
             phase: Float.random(in: 20...30),
             visibility: 0.92,
@@ -668,7 +709,9 @@ final class ARSceneEctoRenderer {
             materials: innerGelMaterials
         )
         innerGel.name = "ecto-inner-gel:\(ecto.id.uuidString)"
-        innerGel.scale = (outerShellRestScale * innerGelScaleRatio) * ectoBodyAssetScale
+        innerGel.scale = bodyTextureProofMode
+            ? outerShellRestScale * ectoBodyAssetScale
+            : (outerShellRestScale * innerGelScaleRatio) * ectoBodyAssetScale
         innerGel.position = .zero
         disableRealityKitShadows(innerGel)
         root.addChild(innerGel)
@@ -828,18 +871,18 @@ final class ARSceneEctoRenderer {
         bubbles.forEach { root.addChild($0) }
 
         let coreHalo = ModelEntity(
-            mesh: .generateSphere(radius: ecto.radius * 0.32),
-            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.56)]
+            mesh: .generateSphere(radius: ecto.radius * 0.22),
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.22)]
         )
         coreHalo.name = "ecto-core-halo:\(ecto.id.uuidString)"
         coreHalo.position = SIMD3<Float>(0, -0.070, 0.036)
-        coreHalo.scale = SIMD3<Float>(1.48, 0.58, 1.18)
+        coreHalo.scale = SIMD3<Float>(0.82, 0.34, 0.66)
         disableRealityKitShadows(coreHalo)
         root.addChild(coreHalo)
 
         let core = ModelEntity(
-            mesh: .generateSphere(radius: ecto.radius * 0.040),
-            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.72)]
+            mesh: .generateSphere(radius: ecto.radius * 0.032),
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.48)]
         )
         core.name = "ecto-core:\(ecto.id.uuidString)"
         core.position = SIMD3<Float>(0, -0.070, 0.040)
@@ -859,6 +902,16 @@ final class ARSceneEctoRenderer {
         let mouth = makeMouth(id: ecto.id, variant: ecto.variant, radius: ecto.radius)
         root.addChild(mouth)
 
+        updateSurfaceAttachedFace(
+            eyes: eyes,
+            mouth: mouth,
+            state: .idle,
+            bodyScale: outerShellRestScale * ectoBodyAssetScale,
+            at: 0,
+            reactivity: 0,
+            motionPhase: 0
+        )
+
         let dropletLayer = makeDropletLayer(variant: ecto.variant, radius: ecto.radius)
         dropletLayer.name = "ecto-droplets:\(ecto.id.uuidString)"
         root.addChild(dropletLayer)
@@ -874,18 +927,31 @@ final class ARSceneEctoRenderer {
 
         let contactGlow = ModelEntity(
             mesh: .generateSphere(radius: ecto.radius),
-            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.18)]
+            materials: [materialFactory.makeCoreMaterial(variant: ecto.variant, intensity: 0.045)]
         )
         contactGlow.name = "ecto-contact-glow:\(ecto.id.uuidString)"
         contactGlow.position = SIMD3<Float>(0, 0.012, 0)
-        contactGlow.scale = SIMD3<Float>(1.28, 0.44, 1.18)
+        contactGlow.scale = SIMD3<Float>(0.62, 0.18, 0.54)
         disableRealityKitShadows(contactGlow)
         contactShadow.addChild(contactGlow)
 
         root.components.set(
             CollisionComponent(
-                shapes: [.generateSphere(radius: ecto.radius * 1.10)]
+                shapes: [.generateSphere(radius: ecto.radius * 1.55)]
             )
+        )
+
+        configureBodyTextureProofMode(
+            outerShell: outerShell,
+            innerGel: innerGel,
+            jellyLobes: jellyLobes,
+            bubbles: bubbles,
+            core: core,
+            coreHalo: coreHalo,
+            eyes: eyes,
+            mouth: mouth,
+            contactShadow: contactShadow,
+            dropletLayer: dropletLayer
         )
 
         return EctoVisual(
@@ -903,14 +969,145 @@ final class ARSceneEctoRenderer {
         )
     }
 
+    private func configureBodyTextureProofMode(
+        outerShell: ModelEntity,
+        innerGel: ModelEntity,
+        jellyLobes: [ModelEntity],
+        bubbles: [ModelEntity],
+        core: ModelEntity,
+        coreHalo: ModelEntity,
+        eyes: [ModelEntity],
+        mouth: ModelEntity,
+        contactShadow: ModelEntity,
+        dropletLayer: Entity
+    ) {
+        guard bodyTextureProofMode else {
+            return
+        }
+
+        outerShell.isEnabled = false
+        outerShell.model?.materials = []
+
+        innerGel.isEnabled = true
+        innerGel.model?.materials = [materialFactory.makeBodyTextureProofMaterial()]
+
+        jellyLobes.forEach {
+            $0.isEnabled = false
+            $0.model?.materials = []
+        }
+        bubbles.forEach {
+            $0.isEnabled = false
+            $0.model?.materials = []
+        }
+
+        core.isEnabled = false
+        coreHalo.isEnabled = false
+        eyes.forEach { $0.isEnabled = true }
+        mouth.isEnabled = true
+        contactShadow.isEnabled = false
+        dropletLayer.isEnabled = false
+    }
+
+    private func updateSurfaceAttachedFace(
+        _ ecto: RenderedEcto,
+        bodyScale: SIMD3<Float>,
+        at time: CFTimeInterval,
+        reactivity: Float
+    ) {
+        updateSurfaceAttachedFace(
+            eyes: ecto.eyes,
+            mouth: ecto.mouth,
+            state: ecto.state,
+            bodyScale: bodyScale,
+            at: time,
+            reactivity: reactivity,
+            motionPhase: ecto.motionPhase
+        )
+    }
+
+    private func updateSurfaceAttachedFace(
+        eyes: [ModelEntity],
+        mouth: ModelEntity,
+        state: EctoState,
+        bodyScale: SIMD3<Float>,
+        at time: CFTimeInterval,
+        reactivity: Float,
+        motionPhase: Float
+    ) {
+        let eyeAnchors = [leftEyeSurfaceAnchor, rightEyeSurfaceAnchor]
+        let blink = max(
+            0.18,
+            1.0 - pow(max(0, sin(Float(time) * 1.6 + motionPhase)), 18.0) * 0.82
+        )
+
+        for (index, eye) in eyes.enumerated() {
+            guard index < eyeAnchors.count else { continue }
+
+            let surface = surfaceTransform(for: eyeAnchors[index], bodyScale: bodyScale)
+            let localUp = surface.orientation.act(SIMD3<Float>(0, 1, 0))
+            let eyeBob = sin(Float(time) * 2.0 + motionPhase + Float(index) * 1.7) * 0.0014
+            eye.position = surface.position + localUp * eyeBob
+            eye.orientation = surface.orientation
+            eye.scale = SIMD3<Float>(
+                0.82,
+                (1.02 + reactivity * 0.14) * blink,
+                0.12
+            )
+        }
+
+        let mouthSurface = surfaceTransform(for: mouthSurfaceAnchor, bodyScale: bodyScale)
+        let mouthOpen: Float = state == .landing ? 1 : reactivity
+        mouth.position = mouthSurface.position
+        mouth.orientation = mouthSurface.orientation
+        mouth.scale = SIMD3<Float>(
+            0.88 + mouthOpen * 0.18,
+            0.30 + mouthOpen * 0.52,
+            0.08
+        )
+    }
+
+    private func surfaceTransform(
+        for anchor: EctoSurfaceFaceAnchor,
+        bodyScale: SIMD3<Float>
+    ) -> (position: SIMD3<Float>, orientation: simd_quatf) {
+        let normal = scaledSurfaceNormal(anchor.meshNormal, bodyScale: bodyScale)
+        let position = anchor.meshPosition * bodyScale + normal * anchor.normalOffset
+        return (position, surfaceOrientation(normal: normal))
+    }
+
+    private func scaledSurfaceNormal(
+        _ normal: SIMD3<Float>,
+        bodyScale: SIMD3<Float>
+    ) -> SIMD3<Float> {
+        let inverseScale = SIMD3<Float>(
+            1 / max(abs(bodyScale.x), 0.0001),
+            1 / max(abs(bodyScale.y), 0.0001),
+            1 / max(abs(bodyScale.z), 0.0001)
+        )
+        return simd_normalize(normal * inverseScale)
+    }
+
+    private func surfaceOrientation(normal rawNormal: SIMD3<Float>) -> simd_quatf {
+        let normal = simd_normalize(rawNormal)
+        let worldUp = SIMD3<Float>(0, 1, 0)
+        var tangent = simd_cross(worldUp, normal)
+        if simd_length_squared(tangent) < 0.0001 {
+            tangent = SIMD3<Float>(1, 0, 0)
+        } else {
+            tangent = simd_normalize(tangent)
+        }
+        let bitangent = simd_normalize(simd_cross(normal, tangent))
+        return simd_quatf(simd_float3x3(columns: (tangent, bitangent, normal)))
+    }
+
     private func makeEye(id: Ecto.ID, xOffset: Float, variant: EctoVariant) -> ModelEntity {
         let eye = ModelEntity(
             mesh: .generateSphere(radius: blobRadius * 0.106),
             materials: [materialFactory.makeEyeMaterial(variant: variant)]
         )
         eye.name = "ecto-eye:\(id.uuidString)"
-        eye.position = SIMD3<Float>(xOffset, 0.040, blobRadius * 0.86)
-        eye.scale = SIMD3<Float>(0.88, 1.08, 0.36)
+        eye.position = .zero
+        eye.scale = SIMD3<Float>(0.82, 1.02, 0.12)
         disableRealityKitShadows(eye)
 
         let socketGlow = ModelEntity(
@@ -918,8 +1115,8 @@ final class ARSceneEctoRenderer {
             materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.22)]
         )
         socketGlow.name = "ecto-eye-socket-glow:\(id.uuidString)"
-        socketGlow.position = SIMD3<Float>(0, 0, -blobRadius * 0.028)
-        socketGlow.scale = SIMD3<Float>(1.28, 1.16, 0.12)
+        socketGlow.position = SIMD3<Float>(0, 0, -blobRadius * 0.018)
+        socketGlow.scale = SIMD3<Float>(1.20, 1.08, 0.08)
         disableRealityKitShadows(socketGlow)
         eye.addChild(socketGlow)
 
@@ -929,8 +1126,8 @@ final class ARSceneEctoRenderer {
             materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.86)]
         )
         eyeSpark.name = "ecto-eye-inner-glow:\(id.uuidString)"
-        eyeSpark.position = SIMD3<Float>(blobRadius * 0.010 * sparkSide, blobRadius * 0.008, blobRadius * 0.022)
-        eyeSpark.scale = SIMD3<Float>(0.92, 0.92, 0.52)
+        eyeSpark.position = SIMD3<Float>(blobRadius * 0.010 * sparkSide, blobRadius * 0.008, blobRadius * 0.010)
+        eyeSpark.scale = SIMD3<Float>(0.92, 0.92, 0.30)
         disableRealityKitShadows(eyeSpark)
         eye.addChild(eyeSpark)
 
@@ -950,8 +1147,8 @@ final class ARSceneEctoRenderer {
             materials: corneaMaterials
         )
         cornea.name = "ecto-eye-cornea:\(id.uuidString)"
-        cornea.position = SIMD3<Float>(0, 0, blobRadius * 0.028)
-        cornea.scale = SIMD3<Float>(1.14, 1.04, 0.24)
+        cornea.position = SIMD3<Float>(0, 0, blobRadius * 0.012)
+        cornea.scale = SIMD3<Float>(1.10, 1.00, 0.10)
         disableRealityKitShadows(cornea)
         eye.addChild(cornea)
 
@@ -964,8 +1161,8 @@ final class ARSceneEctoRenderer {
             materials: [materialFactory.makeMouthMaterial()]
         )
         mouth.name = "ecto-mouth:\(id.uuidString)"
-        mouth.position = SIMD3<Float>(0, -0.004, radius * 0.86)
-        mouth.scale = SIMD3<Float>(0.92, 0.40, 0.30)
+        mouth.position = .zero
+        mouth.scale = SIMD3<Float>(0.88, 0.30, 0.08)
         disableRealityKitShadows(mouth)
 
         let mouthGlow = ModelEntity(
@@ -973,8 +1170,8 @@ final class ARSceneEctoRenderer {
             materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.20)]
         )
         mouthGlow.name = "ecto-mouth-socket-glow:\(id.uuidString)"
-        mouthGlow.position = SIMD3<Float>(0, -radius * 0.002, -radius * 0.018)
-        mouthGlow.scale = SIMD3<Float>(1.26, 0.78, 0.14)
+        mouthGlow.position = SIMD3<Float>(0, -radius * 0.002, -radius * 0.006)
+        mouthGlow.scale = SIMD3<Float>(1.10, 0.62, 0.06)
         disableRealityKitShadows(mouthGlow)
         mouth.addChild(mouthGlow)
 
@@ -983,8 +1180,8 @@ final class ARSceneEctoRenderer {
             materials: [materialFactory.makeCoreMaterial(variant: variant, intensity: 0.44)]
         )
         innerGlow.name = "ecto-mouth-inner-glow:\(id.uuidString)"
-        innerGlow.position = SIMD3<Float>(0, -radius * 0.018, radius * 0.020)
-        innerGlow.scale = SIMD3<Float>(1.32, 0.54, 0.30)
+        innerGlow.position = SIMD3<Float>(0, -radius * 0.010, radius * 0.006)
+        innerGlow.scale = SIMD3<Float>(1.12, 0.42, 0.08)
         disableRealityKitShadows(innerGlow)
         mouth.addChild(innerGlow)
 
@@ -1152,6 +1349,12 @@ private extension Entity {
 
         return nil
     }
+}
+
+private struct EctoSurfaceFaceAnchor {
+    let meshPosition: SIMD3<Float>
+    let meshNormal: SIMD3<Float>
+    let normalOffset: Float
 }
 
 private struct EctoVisual {
