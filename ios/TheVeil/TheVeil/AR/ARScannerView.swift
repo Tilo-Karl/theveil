@@ -39,6 +39,8 @@ extension ARScannerView {
         private var displayLink: CADisplayLink?
         private var resonanceLockTracker = ResonanceLockTracker()
         private var lastResonanceUpdateAt: CFTimeInterval?
+        private var automaticEctoSpawnedFieldRevision: Int?
+        private var nextAutomaticEctoSpawnAttemptAt: CFTimeInterval = 0
         private let haptic = UIImpactFeedbackGenerator(style: .light)
         private let overloadHaptic = UIImpactFeedbackGenerator(style: .heavy)
         private let combatHaptic = UINotificationFeedbackGenerator()
@@ -195,14 +197,23 @@ extension ARScannerView {
             }
 
             #if DEBUG
-            updateSurfacePhaseDebug(
-                with: stablePlanes,
+            handleDebugEctoSpawnRequest(
+                spawnPlaneAnchors: rawPlaneAnchors,
                 at: displayLink.timestamp,
                 in: arView
             )
-            updateDebugEcto(
+            #endif
+
+            updateEcto(
                 spawnPlaneAnchors: rawPlaneAnchors,
                 movementPlaneAnchors: stablePlanes,
+                at: displayLink.timestamp,
+                in: arView
+            )
+
+            #if DEBUG
+            updateSurfacePhaseDebug(
+                with: stablePlanes,
                 at: displayLink.timestamp,
                 in: arView
             )
@@ -308,34 +319,44 @@ extension ARScannerView {
         }
 
         #if DEBUG
-        private func updateDebugEcto(
+        private func handleDebugEctoSpawnRequest(
+            spawnPlaneAnchors: [ARPlaneAnchor],
+            at time: CFTimeInterval,
+            in arView: ARView
+        ) {
+            let didHandleSpawnRequest = viewModel.debugEctoSpawnEventCounter > handledDebugEctoSpawnEventCount
+            guard didHandleSpawnRequest else {
+                return
+            }
+
+            handledDebugEctoSpawnEventCount = viewModel.debugEctoSpawnEventCounter
+            debugForcedEctoTargetID = nil
+
+            let variant = EctoVariant.lime
+            if let ecto = ectoRenderer.spawn(
+                variant: variant,
+                planeAnchors: spawnPlaneAnchors,
+                cameraTransform: arView.cameraTransform,
+                at: time,
+                in: arView
+            ) {
+                automaticEctoSpawnedFieldRevision = viewModel.essenceFieldRevision
+                viewModel.spawnDebugEcto(ecto)
+                haptic.impactOccurred(intensity: 0.55)
+                haptic.prepare()
+            } else {
+                viewModel.ectoStore.clear()
+                viewModel.setDebugEctoStatus("NO SURFACE")
+            }
+        }
+        #endif
+
+        private func updateEcto(
             spawnPlaneAnchors: [ARPlaneAnchor],
             movementPlaneAnchors: [ARPlaneAnchor],
             at time: CFTimeInterval,
             in arView: ARView
         ) {
-            let didHandleSpawnRequest = viewModel.debugEctoSpawnEventCounter > handledDebugEctoSpawnEventCount
-            if didHandleSpawnRequest {
-                handledDebugEctoSpawnEventCount = viewModel.debugEctoSpawnEventCounter
-                debugForcedEctoTargetID = nil
-
-                let variant = EctoVariant.lime
-                if let ecto = ectoRenderer.spawn(
-                    variant: variant,
-                    planeAnchors: spawnPlaneAnchors,
-                    cameraTransform: arView.cameraTransform,
-                    at: time,
-                    in: arView
-                ) {
-                    viewModel.spawnDebugEcto(ecto)
-                    haptic.impactOccurred(intensity: 0.55)
-                    haptic.prepare()
-                } else {
-                    viewModel.ectoStore.clear()
-                    viewModel.setDebugEctoStatus("NO SURFACE")
-                }
-            }
-
             if viewModel.ectoStore.activeEcto != nil {
                 let status = ectoRenderer.update(
                     at: time,
@@ -343,14 +364,62 @@ extension ARScannerView {
                     cameraPosition: arView.cameraTransform.translation,
                     in: arView
                 )
+                #if DEBUG
                 viewModel.setDebugEctoStatus(status)
-            } else if !didHandleSpawnRequest,
-                      viewModel.debugEctoStatus != "ECTO READY",
-                      viewModel.debugEctoStatus != "NO SURFACE" {
-                viewModel.setDebugEctoStatus("ECTO READY")
+                #endif
+                return
+            }
+
+            guard shouldSpawnAutomaticEcto(at: time) else {
+                #if DEBUG
+                if viewModel.debugEctoStatus != "ECTO READY",
+                   viewModel.debugEctoStatus != "NO SURFACE" {
+                    viewModel.setDebugEctoStatus("ECTO READY")
+                }
+                #endif
+                return
+            }
+
+            nextAutomaticEctoSpawnAttemptAt = time + 0.4
+            if let ecto = ectoRenderer.spawn(
+                variant: .lime,
+                planeAnchors: spawnPlaneAnchors,
+                cameraTransform: arView.cameraTransform,
+                at: time,
+                in: arView
+            ) {
+                automaticEctoSpawnedFieldRevision = viewModel.essenceFieldRevision
+                viewModel.spawnEcto(ecto)
+            } else {
+                #if DEBUG
+                viewModel.setDebugEctoStatus("NO SURFACE")
+                #endif
             }
         }
 
+        private func shouldSpawnAutomaticEcto(at time: CFTimeInterval) -> Bool {
+            guard viewModel.isScannerOperational else {
+                return false
+            }
+            guard hasRenderedEssenceField else {
+                return false
+            }
+            guard time >= nextAutomaticEctoSpawnAttemptAt else {
+                return false
+            }
+            guard automaticEctoSpawnedFieldRevision != viewModel.essenceFieldRevision else {
+                return false
+            }
+
+            switch viewModel.gameplayPhase {
+            case .calmSearch, .charged:
+                return true
+            case .discharging, .awakenedHunt, .manifestation:
+                return false
+            }
+        }
+
+        #if DEBUG
         private func updateSurfacePhaseDebug(
             with planeAnchors: [ARPlaneAnchor],
             at time: CFTimeInterval,

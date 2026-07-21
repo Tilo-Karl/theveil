@@ -12,6 +12,8 @@ final class ARSceneEctoRenderer {
     private let outerShellRestScale = SIMD3<Float>(1.12, 1.00, 0.94)
     private let innerGelScaleRatio: Float = 0.965
     private let bodyTextureProofMode = false
+    private let jumpHeadClearanceOffset: Float = 0.25
+    private let jumpHeadSweepRadius: Float = 0.065
     private let leftEyeSurfaceAnchor = EctoSurfaceFaceAnchor(
         meshPosition: SIMD3<Float>(-0.150, 0.030, 0.330),
         meshNormal: SIMD3<Float>(-0.060, 0.610, 0.790),
@@ -236,8 +238,18 @@ final class ARSceneEctoRenderer {
             return
         }
 
+        let targetPosition = target.position + target.normal * blobRadius
+        guard hasJumpClearance(
+            from: ecto.currentPosition,
+            to: targetPosition,
+            planeAnchors: planeAnchors
+        ) else {
+            ecto.nextJumpAt = time + Double.random(in: 0.8...1.6)
+            return
+        }
+
         ecto.jumpStartPosition = ecto.currentPosition
-        ecto.targetPosition = target.position + target.normal * blobRadius
+        ecto.targetPosition = targetPosition
         ecto.state = .preparingToJump
         ecto.stateStartedAt = time
     }
@@ -662,6 +674,84 @@ final class ARSceneEctoRenderer {
             .min {
                 simd_distance($0.position, desired) < simd_distance($1.position, desired)
             }
+    }
+
+    private func hasJumpClearance(
+        from startPosition: SIMD3<Float>,
+        to endPosition: SIMD3<Float>,
+        planeAnchors: [ARPlaneAnchor]
+    ) -> Bool {
+        guard !planeAnchors.isEmpty else {
+            return true
+        }
+
+        var previous = jumpHeadPosition(
+            from: startPosition,
+            to: endPosition,
+            progress: 0
+        )
+
+        for step in 1...8 {
+            let progress = Float(step) / 8
+            let current = jumpHeadPosition(
+                from: startPosition,
+                to: endPosition,
+                progress: progress
+            )
+            let velocity = current - previous
+
+            if ARPlaneSurfaceGeometry.firstHit(
+                from: previous,
+                to: current,
+                velocity: velocity,
+                planeAnchors: planeAnchors,
+                margin: jumpHeadSweepRadius
+            ) != nil {
+                return false
+            }
+
+            if !isHeadClear(at: current, planeAnchors: planeAnchors) {
+                return false
+            }
+
+            previous = current
+        }
+
+        return true
+    }
+
+    private func jumpHeadPosition(
+        from startPosition: SIMD3<Float>,
+        to endPosition: SIMD3<Float>,
+        progress: Float
+    ) -> SIMD3<Float> {
+        let clampedProgress = min(max(progress, 0), 1)
+        let arc = sin(clampedProgress * .pi) * 0.34
+        return mix(startPosition, endPosition, clampedProgress)
+            + SIMD3<Float>(0, arc + jumpHeadClearanceOffset, 0)
+    }
+
+    private func isHeadClear(
+        at headPosition: SIMD3<Float>,
+        planeAnchors: [ARPlaneAnchor]
+    ) -> Bool {
+        for plane in planeAnchors {
+            let normal = ARPlaneSurfaceGeometry.planeNormal(plane)
+            let nearestPoint = ARPlaneSurfaceGeometry.nearestPoint(
+                on: plane,
+                to: headPosition
+            )
+            let toHead = headPosition - nearestPoint
+            let signedDistance = simd_dot(toHead, normal)
+            let lateralOffset = toHead - normal * signedDistance
+
+            if abs(signedDistance) <= jumpHeadSweepRadius,
+               simd_length(lateralOffset) <= jumpHeadSweepRadius {
+                return false
+            }
+        }
+
+        return true
     }
 
     private func makeEctoVisual(_ ecto: Ecto) -> EctoVisual {

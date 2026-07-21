@@ -311,12 +311,18 @@ final class ARScannerViewModel: ObservableObject {
         return true
     }
 
-    func spawnDebugEcto(_ ecto: Ecto) {
+    func spawnEcto(_ ecto: Ecto) {
         ectoStore.spawn(ecto)
         #if DEBUG
         debugEctoStatus = "ECTO ACTIVE"
         #endif
     }
+
+    #if DEBUG
+    func spawnDebugEcto(_ ecto: Ecto) {
+        spawnEcto(ecto)
+    }
+    #endif
 
     func zapEcto(id: Ecto.ID) -> Bool {
         guard isScannerOperational else {
