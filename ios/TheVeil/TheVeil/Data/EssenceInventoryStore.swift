@@ -55,8 +55,8 @@ final class EssenceInventoryStore: ObservableObject {
 
         defaults.set(true, forKey: integratedCellMigrationKey)
 
-        capacitorEssenceCount = equipment.capacitorCapacity
-        capacitorEctoSampleCount = min(capacitorEctoSampleCount, capacitorEssenceCount)
+        capacitorEssenceCount = 0
+        capacitorEctoSampleCount = 0
         isIntegratedCellUnlocked = true
         containmentCellEssenceCount = equipment.containmentCellCapacity
         defaults.set(true, forKey: integratedCellUnlockedKey)
