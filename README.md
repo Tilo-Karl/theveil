@@ -4,6 +4,8 @@ The Veil is an augmented reality ghost hunting game for iPhone built with ARKit 
 
 Use the Spectral Scanner to detect paranormal anomalies, collect essence, and investigate supernatural activity hidden from normal sight.
 
+While the project predates OpenAI Build Week, the work submitted here—including the animated Ecto companion, rendering improvements, and core gameplay systems—was developed during the hackathon with GPT-5.6 and Codex.
+
 ## Structure
 
 - `ios/TheVeil/` - Native iOS app workspace. Create the SwiftUI/ARKit app here with Xcode.
